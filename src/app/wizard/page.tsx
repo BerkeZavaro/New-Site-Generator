@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import CreatineReportTemplate, { CreatineReportProps } from '@/components/templates/CreatineReportTemplate';
 
 interface WizardData {
   // Step 1: Template & basics
@@ -41,6 +42,9 @@ const initialData: WizardData = {
 export default function WizardPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [data, setData] = useState<WizardData>(initialData);
+  const [showPreview, setShowPreview] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const updateField = (field: keyof WizardData, value: string) => {
     setData(prev => ({ ...prev, [field]: value }));
@@ -66,6 +70,190 @@ export default function WizardPage() {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     }
+  };
+
+  const handleGenerateContent = async () => {
+    // Validate required fields
+    if (!data.productName || !data.mainKeyword) {
+      setErrorMessage('Product name and main keyword are required to generate content.');
+      return;
+    }
+
+    setIsGenerating(true);
+    setErrorMessage(null);
+
+    try {
+      const payload = {
+        productName: data.productName,
+        mainKeyword: data.mainKeyword,
+        ageRange: data.ageRange,
+        gender: data.gender,
+        country: data.country || undefined,
+        state: data.region || undefined,
+        tone: data.tone,
+      };
+
+      const response = await fetch('/api/generate-content', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        setErrorMessage('Content generation failed. Please try again or edit manually.');
+        return;
+      }
+
+      const result = await response.json();
+      const { headline, intro, benefits } = result;
+
+      // Update wizard state with generated content
+      updateField('pageHeadline', headline);
+      updateField('introParagraph', intro);
+      updateField('mainBenefits', benefits.join('\n'));
+
+      setErrorMessage(null);
+    } catch (error) {
+      console.error('Content generation error:', error);
+      setErrorMessage('Content generation failed. Please try again or edit manually.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const previewProps = buildPreviewProps(data);
+      const slug = data.mainKeyword
+        ? data.mainKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+        : 'funnel';
+
+      const response = await fetch('/api/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ slug, props: previewProps }),
+      });
+
+      if (!response.ok) {
+        alert('Export failed. Please try again.');
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${slug}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Export failed. Please try again.');
+    }
+  };
+
+  const buildPreviewProps = (formState: WizardData): CreatineReportProps => {
+    // Build breadcrumb
+    const breadcrumb = `Creatine Product Buyer's Guide > ${formState.productName || 'Supplement Review'}`;
+
+    // Build page title
+    const pageTitle = formState.pageHeadline || formState.productName || 'Creatine Supplement Review';
+
+    // Build main lead
+    let mainLead = formState.introParagraph;
+    if (!mainLead || mainLead.trim() === '') {
+      const keywordText = formState.mainKeyword ? ` about ${formState.mainKeyword}` : '';
+      mainLead = `${formState.productName || 'This creatine supplement'} is a high-quality product${keywordText}. This comprehensive review examines its effectiveness, ingredients, and value for money.`;
+    }
+
+    // Build main benefits
+    let mainBenefits: string[] = [];
+    if (formState.mainBenefits && formState.mainBenefits.trim() !== '') {
+      mainBenefits = formState.mainBenefits
+        .split('\n')
+        .map(b => b.trim())
+        .filter(b => b !== '');
+    }
+    if (mainBenefits.length === 0) {
+      mainBenefits = [
+        'Increases muscle strength and power output',
+        'Enhances muscle recovery after workouts',
+        'Supports muscle growth and size gains',
+        'Improves exercise performance and endurance',
+        'Helps maintain muscle mass during training'
+      ];
+    }
+
+    // Build paragraph sections using wizard data
+    const ageText = formState.ageRange ? ` for ${formState.ageRange}` : '';
+    const genderText = formState.gender && formState.gender !== 'all' ? ` ${formState.gender}` : '';
+    const locationText = formState.country ? ` in ${formState.country}` : '';
+    const toneText = formState.tone ? ` with a ${formState.tone} tone` : '';
+    const keywordText = formState.mainKeyword ? ` related to ${formState.mainKeyword}` : '';
+
+    const effectivenessParagraphs = [
+      `${formState.productName || 'This creatine supplement'} contains pure creatine monohydrate, which is the most researched and proven form of creatine available. Studies consistently show that creatine monohydrate supplementation can increase muscle creatine stores by up to 40%, leading to improved performance in high-intensity activities.`,
+      `The product is designed${ageText}${genderText ? ` for ${genderText} users` : ''}${locationText}${toneText}. Each serving provides 5 grams of creatine monohydrate, which is the standard effective dose recommended by research.`,
+      `Users typically report noticeable improvements in strength and muscle fullness within 2-4 weeks of consistent use, especially when combined with proper training and nutrition.`
+    ];
+
+    const comparisonParagraphs = [
+      `Compared to other creatine supplements on the market, ${formState.productName || 'this product'} offers excellent value. While some brands charge premium prices for "advanced" forms of creatine, research shows that creatine monohydrate is equally effective and often more cost-efficient.`,
+      `The product stands out for its purity and lack of unnecessary additives. Unlike some competitors that include fillers or proprietary blends, this supplement provides exactly what you need: pure creatine monohydrate${keywordText}.`,
+      `When compared to leading brands, ${formState.productName || 'this creatine supplement'} delivers similar results at a more affordable price point, making it an excellent choice for budget-conscious athletes and fitness enthusiasts.`
+    ];
+
+    const reviewParagraphs = [
+      `Customer reviews consistently praise ${formState.productName || 'this product'} for its effectiveness and value. Many users report significant strength gains and improved workout performance after just a few weeks of use.`,
+      `The powder mixes easily in water or juice, with minimal clumping. Some users note a slight chalky taste, which is common with creatine supplements, but it's generally well-tolerated.`,
+      `The packaging is functional and includes a scoop for easy measuring. The product arrives well-sealed and fresh, with a long shelf life when stored properly.`
+    ];
+
+    const bottomLineParagraph = `${formState.productName || 'This creatine supplement'} is a solid choice for anyone looking to supplement with creatine monohydrate${keywordText}. It offers proven effectiveness, good value for money, and reliable quality. While it may not have the flashy marketing of premium brands, it delivers the results you need at a reasonable price. Recommended for athletes, bodybuilders, and fitness enthusiasts looking to enhance their performance and muscle gains.`;
+
+    return {
+      breadcrumb,
+      pageTitle,
+      updatedTag: 'Updated November 2025',
+      productName: formState.productName || 'Creatine Supplement',
+      productImageAlt: `Product image for ${formState.productName || 'this creatine supplement'}`,
+      mainLead,
+      mainBenefits,
+      effectivenessParagraphs,
+      comparisonParagraphs,
+      reviewParagraphs,
+      bottomLineParagraph,
+      ratings: {
+        customerService: 5,
+        valueRating: 5,
+        customerRating: 5,
+        overallRating: 5,
+      },
+      productUrl: formState.productUrl || '#',
+      sidebarDiscoverItems: [
+        'How creatine monohydrate works in your body',
+        'The science behind muscle strength gains',
+        'Optimal dosing strategies for best results',
+        'Common myths about creatine debunked',
+        'How to cycle creatine effectively'
+      ],
+      sidebarTopItems: [
+        'Purity and quality of ingredients',
+        'Dosage and serving size',
+        'Price and value for money',
+        'Mixability and taste',
+        'Customer reviews and ratings',
+        'Third-party testing and certifications'
+      ],
+      newsletterTitle: 'Stay Updated',
+      newsletterDesc: 'Get the latest creatine research, product reviews, and fitness tips delivered to your inbox.'
+    };
   };
 
   return (
@@ -251,10 +439,26 @@ export default function WizardPage() {
                     Content Placeholders
                   </h2>
 
-                  <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6">
-                    <p className="text-sm text-blue-800">
-                      Later, the content generator will auto-fill these fields.
-                    </p>
+                  <div className="mb-6">
+                    <button
+                      onClick={handleGenerateContent}
+                      disabled={isGenerating || !data.productName || !data.mainKeyword}
+                      className={`w-full px-6 py-3 rounded-md font-medium transition-colors ${
+                        isGenerating || !data.productName || !data.mainKeyword
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-purple-600 text-white hover:bg-purple-700'
+                      }`}
+                    >
+                      {isGenerating ? 'Generating content...' : 'Generate content with AI'}
+                    </button>
+                    {isGenerating && (
+                      <p className="text-sm text-gray-600 mt-2 text-center">
+                        Generating content...
+                      </p>
+                    )}
+                    {errorMessage && (
+                      <p className="text-sm text-red-600 mt-2">{errorMessage}</p>
+                    )}
                   </div>
 
                   <div className="space-y-6">
@@ -300,10 +504,10 @@ export default function WizardPage() {
 
                   <div className="mt-8 pt-6 border-t border-gray-200">
                     <button
-                      disabled
-                      className="w-full px-6 py-3 text-white bg-gray-400 rounded-md cursor-not-allowed font-medium"
+                      onClick={() => setShowPreview(true)}
+                      className="w-full px-6 py-3 text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors font-medium"
                     >
-                      Generate Preview (coming later)
+                      Generate Preview
                     </button>
                   </div>
                 </div>
@@ -457,6 +661,24 @@ export default function WizardPage() {
             </div>
           </div>
         </div>
+
+        {/* Preview Section */}
+        {showPreview && (
+          <div className="mt-12">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">
+                Generated Page Preview
+              </h2>
+              <button
+                onClick={handleExport}
+                className="px-6 py-3 text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors font-medium"
+              >
+                Export for WebDev (HTML)
+              </button>
+            </div>
+            <CreatineReportTemplate {...buildPreviewProps(data)} />
+          </div>
+        )}
       </div>
     </div>
   );
