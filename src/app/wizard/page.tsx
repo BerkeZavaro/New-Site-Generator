@@ -440,11 +440,16 @@ export default function WizardPage() {
           }
         }
         
-        setErrorMessage(
-          errorDetails 
-            ? `${errorMessage}: ${errorDetails}`
-            : errorMessage
-        );
+        // Check if it's a rate limit error and provide helpful message
+        let displayMessage = errorDetails 
+          ? `${errorMessage}: ${errorDetails}`
+          : errorMessage;
+        
+        if (errorDetails?.includes('rate limit') || errorDetails?.includes('429') || errorMessage?.includes('rate limit')) {
+          displayMessage = `${errorMessage}\n\n⏳ Rate limit reached. The system will automatically retry with delays. Please wait...\n\nIf this persists, you may need to wait a few minutes before trying again.`;
+        }
+        
+        setErrorMessage(displayMessage);
         return;
       }
 
@@ -1963,6 +1968,8 @@ export default function WizardPage() {
                                     ? extractImageMetadata(selected.template.htmlBody, slot.id) || undefined
                                     : undefined
                                 }
+                                productName={data.productName}
+                                mainKeyword={data.mainKeyword}
                               />
                             ) : slot.type === 'list' ? (
                               <textarea

@@ -27,6 +27,7 @@ import {
   buildRegenerateSlotPrompt,
   extractJsonFromResponse,
 } from './prompts';
+import { rateLimiter } from './rateLimiter';
 
 /**
  * AI Model Provider Interface
@@ -48,6 +49,9 @@ function sleep(ms: number): Promise<void> {
  */
 export class GoogleGeminiProvider implements AIModelProvider {
   async generateText(prompt: string, config: AIModelConfig): Promise<string> {
+    // Wait for rate limiter before making request
+    await rateLimiter.waitIfNeeded();
+    
     // Dynamic import to avoid issues if package is not installed
     const googleAIModule = await Function('return import("@google/generative-ai")')();
     const GoogleGenerativeAI = googleAIModule.GoogleGenerativeAI;
@@ -73,7 +77,7 @@ export class GoogleGeminiProvider implements AIModelProvider {
     
     for (const modelName of modelNames) {
       // Retry logic with exponential backoff for rate limits
-      const maxRetries = 3;
+      const maxRetries = 5; // Increased retries for rate limits
       let retryCount = 0;
       
       while (retryCount <= maxRetries) {
@@ -99,14 +103,20 @@ export class GoogleGeminiProvider implements AIModelProvider {
             console.log(`⚠️ Model ${modelName} not available, trying next...`);
             break; // Break out of retry loop, try next model
           } 
-          // If it's a rate limit error, retry with exponential backoff
+          // If it's a rate limit error, use rate limiter and retry
           else if (error.message?.includes('429') || 
                    error.message?.includes('Too Many Requests') ||
-                   error.message?.includes('rate limit')) {
+                   error.message?.includes('rate limit') ||
+                   error.status === 429 ||
+                   error.code === 429) {
             if (retryCount < maxRetries) {
-              const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 30000); // Max 30 seconds
-              console.log(`⚠️ Rate limit hit (429). Retrying in ${backoffDelay / 1000}s... (attempt ${retryCount + 1}/${maxRetries})`);
-              await sleep(backoffDelay);
+              // Use rate limiter to handle the delay
+              await rateLimiter.handleRateLimitError(error);
+              
+              // Wait additional time before retry
+              await rateLimiter.waitIfNeeded();
+              
+              console.log(`🔄 Retrying after rate limit (attempt ${retryCount + 1}/${maxRetries})...`);
               retryCount++;
               continue; // Retry the same model
             } else {
@@ -114,7 +124,8 @@ export class GoogleGeminiProvider implements AIModelProvider {
               throw new Error(
                 'API rate limit exceeded (429 Too Many Requests). ' +
                 'Maximum retries reached. Please wait a few minutes before trying again. ' +
-                'If this persists, check your Google AI API quota and usage limits.'
+                'If this persists, check your Google AI API quota and usage limits. ' +
+                `Current request count: ${rateLimiter.getCurrentRequestCount()}/minute`
               );
             }
           } 
@@ -278,9 +289,13 @@ export class ContentGenerator {
         errors[slot.slotId] = response.error || 'Unknown error';
       }
       
-      // Add delay between requests (except for the last one) to avoid rate limits
+      // Rate limiter already handles delays in generateText, but add extra safety delay
+      // for batch operations to be extra safe
       if (i < slots.length - 1) {
-        await sleep(500); // 500ms delay between slot generations
+        // Wait for rate limiter to ensure we don't exceed limits
+        await rateLimiter.waitIfNeeded();
+        // Additional small delay for batch operations
+        await sleep(200);
       }
     }
 
@@ -378,19 +393,46 @@ export class ContentGenerator {
       console.log('✅ Mapping Response Received');
       console.log(`Response length: ${response.length} characters`);
 
+      // Check if response is empty
+      if (!response || response.trim().length === 0) {
+        console.error('❌ Empty response from AI');
+        return {
+          slots: {},
+          success: false,
+          error: 'AI returned an empty response. Please try again.',
+        };
+      }
+
       // Parse JSON response
       let jsonContent = extractJsonFromResponse(response);
       
-      let parsed: Record<string, string>;
-      try {
-        parsed = JSON.parse(jsonContent);
-      } catch (parseError) {
-        console.error('❌ Failed to parse mapping response:', parseError);
+      // Check if extracted content is empty
+      if (!jsonContent || jsonContent.trim().length === 0) {
+        console.error('❌ Empty JSON content after extraction');
         console.error('Raw response:', response);
         return {
           slots: {},
           success: false,
-          error: 'Failed to parse AI response as JSON',
+          error: 'Failed to extract JSON from AI response. The response may not be in the expected format.',
+        };
+      }
+      
+      let parsed: Record<string, string>;
+      try {
+        parsed = JSON.parse(jsonContent);
+      } catch (parseError: any) {
+        console.error('❌ Failed to parse mapping response:', parseError);
+        console.error('Parse error details:', {
+          message: parseError?.message,
+          name: parseError?.name,
+          stack: parseError?.stack,
+        });
+        console.error('Extracted JSON content:', jsonContent.substring(0, 500));
+        console.error('Raw response:', response.substring(0, 500));
+        return {
+          slots: {},
+          success: false,
+          error: `Failed to parse AI response as JSON: ${parseError?.message || 'Invalid JSON format'}`,
         };
       }
 
@@ -441,21 +483,37 @@ export class ContentGenerator {
     } catch (error: any) {
       console.error('❌ Narrative Mapping Failed:', error);
       console.error('Error details:', {
-        message: error.message,
-        name: error.name,
-        stack: error.stack,
+        message: error?.message,
+        name: error?.name,
+        stack: error?.stack,
+        error: error,
+        errorType: typeof error,
+        errorString: String(error),
       });
       
       // Provide more specific error messages
       let errorMessage = 'Failed to map narrative to slots';
-      if (error.message?.includes('429') || error.message?.includes('rate limit')) {
+      
+      // Handle different error types
+      const errorStr = error?.message || error?.toString() || String(error) || 'Unknown error';
+      
+      if (errorStr.includes('429') || errorStr.includes('rate limit') || errorStr.includes('Too Many Requests')) {
         errorMessage = 'API rate limit exceeded. Please wait a few minutes and try again.';
-      } else if (error.message?.includes('timeout')) {
+      } else if (errorStr.includes('timeout') || errorStr.includes('ETIMEDOUT')) {
         errorMessage = 'Request timed out. The narrative might be too long. Please try again.';
-      } else if (error.message?.includes('quota') || error.message?.includes('quota exceeded')) {
+      } else if (errorStr.includes('quota') || errorStr.includes('quota exceeded')) {
         errorMessage = 'API quota exceeded. Please check your Google AI API quota.';
-      } else if (error.message) {
-        errorMessage = error.message;
+      } else if (errorStr.includes('401') || errorStr.includes('403') || errorStr.includes('authentication') || errorStr.includes('API key')) {
+        errorMessage = 'API authentication failed. Please check your GOOGLE_AI_API_KEY.';
+      } else if (errorStr.includes('404') || errorStr.includes('not found')) {
+        errorMessage = 'AI model not found. Please check your API key has access to Gemini models.';
+      } else if (errorStr.includes('network') || errorStr.includes('fetch') || errorStr.includes('ECONNREFUSED')) {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      } else if (errorStr && errorStr !== 'Unknown error' && errorStr !== '[object Object]') {
+        errorMessage = errorStr;
+      } else {
+        // Fallback: provide more context
+        errorMessage = `Failed to map narrative to slots. ${error?.name ? `Error type: ${error.name}. ` : ''}Check server console for details.`;
       }
       
       return {

@@ -118,17 +118,27 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Narrative mapping error:', error);
-    console.error('Error stack:', error.stack);
+    console.error('Error stack:', error?.stack);
     console.error('Error details:', {
-      message: error.message,
-      name: error.name,
-      cause: error.cause,
+      message: error?.message,
+      name: error?.name,
+      cause: error?.cause,
+      error: error,
+      errorType: typeof error,
+      errorString: String(error),
     });
+    
+    // Provide better error message
+    const errorStr = error?.message || error?.toString() || String(error) || 'Unknown error';
+    const errorDetails = errorStr !== 'Unknown error' && errorStr !== '[object Object]' 
+      ? errorStr 
+      : `Error type: ${error?.name || typeof error}. Check server console for details.`;
+    
     return Response.json(
       { 
         error: 'Failed to map narrative to slots', 
-        details: error.message || 'Unknown error',
-        hint: error.stack ? 'Check server console for full error details' : undefined
+        details: errorDetails,
+        hint: error?.stack ? 'Check server console for full error details' : 'See details field above for more information'
       },
       { status: 500 }
     );
