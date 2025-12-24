@@ -29,10 +29,27 @@ export function ImageSlotUpload({
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
+  const [fileSize, setFileSize] = useState<number | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
 
   useEffect(() => {
     setPreview(value || null);
+    if (value && (value.startsWith('http') || value.startsWith('data:') || value.startsWith('blob:'))) {
+      // Try to get image dimensions when value changes
+      const img = new Image();
+      img.onload = () => {
+        setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+      };
+      img.onerror = () => {
+        setImageDimensions(null);
+      };
+      img.src = value;
+    } else {
+      setImageDimensions(null);
+    }
   }, [value]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,11 +63,12 @@ export function ImageSlotUpload({
     }
 
     // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Image size must be less than 5MB");
+    if (file.size > MAX_FILE_SIZE) {
+      alert(`Image size must be less than ${formatFileSize(MAX_FILE_SIZE)}. Your file is ${formatFileSize(file.size)}.`);
       return;
     }
 
+    setFileSize(file.size);
     setIsUploading(true);
 
     try {
@@ -61,25 +79,53 @@ export function ImageSlotUpload({
         setPreview(dataUrl);
         onChange(dataUrl);
         setIsUploading(false);
+        
+        // Get image dimensions
+        const img = new Image();
+        img.onload = () => {
+          setImageDimensions({ width: img.width, height: img.height });
+        };
+        img.src = dataUrl;
       };
       reader.onerror = () => {
         alert("Failed to read image file");
         setIsUploading(false);
+        setFileSize(null);
       };
       reader.readAsDataURL(file);
     } catch (error) {
       console.error("Error uploading image:", error);
       alert("Failed to upload image");
       setIsUploading(false);
+      setFileSize(null);
     }
+  };
+  
+  // Format file size for display
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
   const handleUrlChange = (url: string) => {
     onChange(url);
     if (url.trim()) {
       setPreview(url);
+      // Try to get image dimensions from URL
+      const img = new Image();
+      img.onload = () => {
+        setImageDimensions({ width: img.width, height: img.height });
+      };
+      img.onerror = () => {
+        setImageDimensions(null);
+      };
+      img.src = url;
+      setFileSize(null); // URL images don't have file size
     } else {
       setPreview(null);
+      setImageDimensions(null);
+      setFileSize(null);
     }
   };
 
@@ -142,6 +188,17 @@ export function ImageSlotUpload({
         onChange(imageUrl);
         setAiError(null); // Clear any previous errors
         console.log(`✅ Image generated successfully using model: ${data.model || 'unknown'}`);
+        
+        // Get image dimensions
+        const img = new Image();
+        img.onload = () => {
+          setImageDimensions({ width: img.width, height: img.height });
+        };
+        img.onerror = () => {
+          setImageDimensions(null);
+        };
+        img.src = imageUrl;
+        setFileSize(null); // AI-generated images don't have file size
       } else {
         setAiError(data.error || 'Image generation returned no image data');
       }
@@ -222,9 +279,35 @@ export function ImageSlotUpload({
               <span className="text-gray-700">Click to upload image or drag and drop</span>
             )}
           </label>
-          {dimensions && (
+          <div className="flex items-center justify-between text-xs">
+            {dimensions && (
+              <p className="text-gray-600 font-medium">
+                📐 Recommended: <span className="font-semibold">{dimensions.width || "?"} × {dimensions.height || "?"}px</span>
+              </p>
+            )}
+            <p className="text-gray-500">
+              Max size: <span className="font-semibold">{formatFileSize(MAX_FILE_SIZE)}</span>
+            </p>
+          </div>
+          {fileSize && (
+            <p className={`text-xs ${fileSize > MAX_FILE_SIZE * 0.9 ? 'text-orange-600' : 'text-gray-500'}`}>
+              Current file: {formatFileSize(fileSize)}
+            </p>
+          )}
+          {imageDimensions && (
             <p className="text-xs text-gray-500">
-              Recommended size: {dimensions.width || "?"} × {dimensions.height || "?"}px
+              Image dimensions: <span className="font-medium">{imageDimensions.width} × {imageDimensions.height}px</span>
+              {dimensions && dimensions.width && dimensions.height && (
+                <span className={`ml-2 ${
+                  Math.abs(imageDimensions.width - dimensions.width) > dimensions.width * 0.1 ||
+                  Math.abs(imageDimensions.height - dimensions.height) > dimensions.height * 0.1
+                    ? 'text-orange-600' : 'text-green-600'
+                }`}>
+                  ({Math.abs(imageDimensions.width - (dimensions.width || 0)) > (dimensions.width || 0) * 0.1 ||
+                    Math.abs(imageDimensions.height - (dimensions.height || 0)) > (dimensions.height || 0) * 0.1
+                    ? '⚠ Size mismatch' : '✓ Size matches'})
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -240,9 +323,32 @@ export function ImageSlotUpload({
             placeholder="https://example.com/image.jpg"
             className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
-          <p className="text-xs text-gray-500">
-            Enter a direct URL to an image file
-          </p>
+          <div className="flex items-center justify-between text-xs">
+            {dimensions && (
+              <p className="text-gray-600 font-medium">
+                📐 Recommended: <span className="font-semibold">{dimensions.width || "?"} × {dimensions.height || "?"}px</span>
+              </p>
+            )}
+            <p className="text-gray-500">
+              Enter a direct URL to an image file
+            </p>
+          </div>
+          {imageDimensions && (
+            <p className="text-xs text-gray-500">
+              Image dimensions: <span className="font-medium">{imageDimensions.width} × {imageDimensions.height}px</span>
+              {dimensions && dimensions.width && dimensions.height && (
+                <span className={`ml-2 ${
+                  Math.abs(imageDimensions.width - dimensions.width) > dimensions.width * 0.1 ||
+                  Math.abs(imageDimensions.height - dimensions.height) > dimensions.height * 0.1
+                    ? 'text-orange-600' : 'text-green-600'
+                }`}>
+                  ({Math.abs(imageDimensions.width - (dimensions.width || 0)) > (dimensions.width || 0) * 0.1 ||
+                    Math.abs(imageDimensions.height - (dimensions.height || 0)) > (dimensions.height || 0) * 0.1
+                    ? '⚠ Size mismatch' : '✓ Size matches'})
+                </span>
+              )}
+            </p>
+          )}
         </div>
       )}
 
@@ -253,9 +359,14 @@ export function ImageSlotUpload({
             <p className="text-sm text-purple-800 mb-2">
               <strong>✨ AI Image Generation</strong>
             </p>
-            <p className="text-xs text-purple-700">
+            <p className="text-xs text-purple-700 mb-2">
               Describe the image you want to generate. The AI will create an image based on your product and keyword context.
             </p>
+            {dimensions && (
+              <p className="text-xs text-purple-700 font-medium">
+                📐 Target size: <span className="font-semibold">{dimensions.width || "?"} × {dimensions.height || "?"}px</span>
+              </p>
+            )}
           </div>
           
           <textarea
@@ -306,8 +417,13 @@ export function ImageSlotUpload({
       {(preview || placeholderImage) && (
         <div className="space-y-2">
           <div className="relative border border-gray-300 rounded-lg overflow-hidden bg-gray-50">
-            <div className="p-2 bg-gray-100 border-b border-gray-200">
+            <div className="p-2 bg-gray-100 border-b border-gray-200 flex items-center justify-between">
               <span className="text-xs font-medium text-gray-700">Preview: {slotLabel}</span>
+              {imageDimensions && (
+                <span className="text-xs text-gray-600">
+                  {imageDimensions.width} × {imageDimensions.height}px
+                </span>
+              )}
             </div>
             <div className="p-4 flex items-center justify-center min-h-[200px] max-h-[400px] overflow-auto">
               {preview ? (
@@ -315,8 +431,13 @@ export function ImageSlotUpload({
                   src={preview}
                   alt={`Preview for ${slotLabel}`}
                   className="max-w-full max-h-[350px] object-contain rounded"
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+                  }}
                   onError={() => {
                     setPreview(null);
+                    setImageDimensions(null);
                     if (uploadMode === "url") {
                       alert("Failed to load image from URL. Please check the URL and try again.");
                     }
@@ -328,6 +449,10 @@ export function ImageSlotUpload({
                     src={placeholderImage}
                     alt="Template placeholder"
                     className="max-w-full max-h-[350px] object-contain rounded opacity-50 mx-auto"
+                    onLoad={(e) => {
+                      const img = e.currentTarget;
+                      setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+                    }}
                   />
                   <p className="text-xs text-gray-500">Template placeholder (replace with your image)</p>
                 </div>
@@ -335,13 +460,29 @@ export function ImageSlotUpload({
             </div>
           </div>
           {preview && (
-            <button
-              type="button"
-              onClick={handleRemove}
-              className="w-full px-4 py-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
-            >
-              Remove Image
-            </button>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded border border-gray-200">
+                {dimensions ? (
+                  <span>
+                    📐 Recommended: <span className="font-semibold">{dimensions.width || "?"} × {dimensions.height || "?"}px</span>
+                  </span>
+                ) : (
+                  <span className="text-gray-500">No recommended size specified</span>
+                )}
+                {fileSize && (
+                  <span>
+                    File size: <span className="font-semibold">{formatFileSize(fileSize)}</span> / {formatFileSize(MAX_FILE_SIZE)} max
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleRemove}
+                className="w-full px-4 py-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
+              >
+                Remove Image
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -349,7 +490,11 @@ export function ImageSlotUpload({
       {/* Info about where this image appears */}
       <div className="text-xs text-gray-500 bg-blue-50 border border-blue-200 rounded-md p-2">
         💡 <strong>Tip:</strong> This image will appear in the <strong>{slotLabel}</strong> section of your template. 
-        Use the preview button above to see exactly where it will be placed.
+        {dimensions && dimensions.width && dimensions.height ? (
+          <> Use an image sized <strong>{dimensions.width} × {dimensions.height}px</strong> for best results.</>
+        ) : (
+          <> Use the preview button above to see exactly where it will be placed.</>
+        )}
       </div>
     </div>
   );

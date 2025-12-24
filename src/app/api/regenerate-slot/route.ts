@@ -14,6 +14,7 @@ interface RegenerateSlotRequest {
   state?: string; // Legacy: single state
   targetStates?: string[]; // Array of US states for regional targeting
   tone: string;
+  maxLength?: number;
 }
 
 export async function POST(request: NextRequest) {
@@ -30,7 +31,8 @@ export async function POST(request: NextRequest) {
       country, 
       state,
       targetStates,
-      tone 
+      tone,
+      maxLength
     } = body;
 
     // Validate required fields
@@ -82,6 +84,7 @@ export async function POST(request: NextRequest) {
       slotType: slotType as SlotType,
       coreNarrative,
       userConfig,
+      maxLength,
     });
 
     if (!result.success) {

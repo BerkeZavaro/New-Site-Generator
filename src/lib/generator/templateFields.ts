@@ -25,6 +25,7 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
       label: 'Intro Paragraph',
       slotType: 'paragraph',
       description: 'Introduction paragraph that addresses the main keyword/topic',
+      maxLength: 500,
       instructions: '3-5 sentences introducing the product and topic',
     },
     {
@@ -32,6 +33,7 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
       label: 'Main Benefits',
       slotType: 'list',
       description: 'List of key benefits (one per line)',
+      maxLength: 800,
       instructions: '5-8 key benefits, each as a complete sentence or phrase',
     },
     {
@@ -39,6 +41,7 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
       label: 'Effectiveness Paragraphs',
       slotType: 'paragraph',
       description: 'Paragraphs explaining product effectiveness',
+      maxLength: 1500,
       instructions: 'Multiple paragraphs (one per line) about how the product works',
     },
     {
@@ -46,6 +49,7 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
       label: 'Comparison Paragraphs',
       slotType: 'paragraph',
       description: 'Paragraphs comparing the product to alternatives',
+      maxLength: 1500,
       instructions: 'Multiple paragraphs (one per line) comparing to competitors',
     },
     {
@@ -53,6 +57,7 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
       label: 'Review Paragraphs',
       slotType: 'paragraph',
       description: 'Customer review and testimonial paragraphs',
+      maxLength: 1500,
       instructions: 'Multiple paragraphs (one per line) with customer feedback',
     },
     {
@@ -60,6 +65,7 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
       label: 'Bottom Line Paragraph',
       slotType: 'paragraph',
       description: 'Concluding paragraph summarizing the value proposition',
+      maxLength: 500,
       instructions: 'Strong conclusion that reinforces the main message',
     },
     {
@@ -67,6 +73,7 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
       label: 'Sidebar Discover Items',
       slotType: 'list',
       description: 'Items for "Discover" section in sidebar',
+      maxLength: 400,
       instructions: 'List of topics (one per line) related to the product',
     },
     {
@@ -74,6 +81,7 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
       label: 'Sidebar Top Items',
       slotType: 'list',
       description: 'Top items to consider in sidebar',
+      maxLength: 400,
       instructions: 'List of considerations (one per line) when choosing the product',
     },
     {
@@ -100,12 +108,28 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
 export function getUploadedTemplateFields(
   slots: Array<{ id: string; label: string; type: string }>
 ): TemplateFieldDefinition[] {
-  return slots.map(slot => ({
-    slotId: slot.id,
-    label: slot.label,
-    slotType: mapSlotType(slot.type),
-    description: `Content slot: ${slot.label}`,
-  }));
+  return slots.map(slot => {
+    const slotType = mapSlotType(slot.type);
+    
+    // Assign default maxLength based on slot type
+    let maxLength: number | undefined;
+    if (slotType === 'headline') {
+      maxLength = 100; // Headlines: 100 chars
+    } else if (slotType === 'list') {
+      maxLength = 800; // Lists: 800 chars
+    } else if (slotType === 'paragraph') {
+      maxLength = 1000; // Paragraphs: 1000 chars
+    }
+    // No limit for other types
+    
+    return {
+      slotId: slot.id,
+      label: slot.label,
+      slotType,
+      description: `Content slot: ${slot.label}`,
+      maxLength,
+    };
+  });
 }
 
 /**

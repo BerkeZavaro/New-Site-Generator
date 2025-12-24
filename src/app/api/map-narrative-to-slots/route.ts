@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { createContentGenerator } from '@/lib/generator/ContentGenerator';
 import { getCreatineReportFields, getUploadedTemplateFields } from '@/lib/generator/templateFields';
-import { loadUploadedTemplates } from '@/lib/templates/uploadedStorage';
 import type { UserConfig } from '@/lib/generator/types';
 import type { TemplateId } from '@/lib/templates/registry';
 
@@ -16,6 +15,7 @@ interface MapNarrativeToSlotsRequest {
   state?: string; // Legacy: single state
   targetStates?: string[]; // Array of US states for regional targeting
   tone: string;
+  templateSlots?: Array<{ id: string; label: string; type: string }>; // For uploaded templates, send slots from client
 }
 
 export async function POST(request: NextRequest) {
@@ -31,7 +31,8 @@ export async function POST(request: NextRequest) {
       country, 
       state,
       targetStates,
-      tone 
+      tone,
+      templateSlots
     } = body;
 
     // Validate required fields
@@ -82,16 +83,14 @@ export async function POST(request: NextRequest) {
     if (templateId === 'creatine-report') {
       templateFields = getCreatineReportFields();
     } else {
-      // Uploaded template
-      const uploadedTemplates = loadUploadedTemplates();
-      const template = uploadedTemplates.find(t => t.id === templateId);
-      if (!template) {
+      // Uploaded template - use slots sent from client
+      if (!templateSlots || templateSlots.length === 0) {
         return Response.json(
-          { error: `Template with id "${templateId}" not found` },
-          { status: 404 }
+          { error: `Template slots are required for uploaded template "${templateId}"` },
+          { status: 400 }
         );
       }
-      templateFields = getUploadedTemplateFields(template.slots);
+      templateFields = getUploadedTemplateFields(templateSlots);
     }
 
     // Map narrative to slots

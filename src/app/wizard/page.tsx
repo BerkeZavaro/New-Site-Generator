@@ -15,6 +15,7 @@ import { getFunnelById, upsertFunnel } from '@/lib/funnels/storage';
 import { ExportFormat } from '@/lib/export/types';
 import { buildCreatineReportHtml } from '@/lib/export/buildStaticHtml';
 import { buildUploadedTemplateFiles } from '@/lib/export/buildUploadedTemplateFiles';
+import { getCreatineReportFields, getUploadedTemplateFields } from '@/lib/generator/templateFields';
 
 interface WizardData {
   // Step 1: Template & basics
@@ -140,6 +141,48 @@ const initialData: WizardData = {
   newsletterDesc: 'Get the latest creatine research, product reviews, and fitness tips delivered to your inbox.',
 };
 
+// Helper function to get maxLength for a field (CreatineReport template)
+function getFieldMaxLength(fieldId: string): number | undefined {
+  const fields = getCreatineReportFields();
+  const field = fields.find(f => f.slotId === fieldId);
+  return field?.maxLength;
+}
+
+// Helper function to get maxLength for uploaded template slot
+function getUploadedSlotMaxLength(slotId: string, template: UploadedTemplate): number | undefined {
+  const fields = getUploadedTemplateFields(template.slots);
+  const field = fields.find(f => f.slotId === slotId);
+  return field?.maxLength;
+}
+
+// Character Counter Component
+function CharacterCounter({ value, maxLength }: { value: string; maxLength?: number }) {
+  const currentLength = value.length;
+  
+  // If no maxLength, just show the current count
+  if (!maxLength) {
+    return (
+      <div className="absolute bottom-2 right-2 text-xs text-gray-500">
+        {currentLength} characters
+      </div>
+    );
+  }
+  
+  // If maxLength is set, show count/max with color coding
+  const isNearLimit = currentLength > maxLength * 0.8;
+  const isOverLimit = currentLength > maxLength;
+  
+  return (
+    <div className={`absolute bottom-2 right-2 text-xs ${
+      isOverLimit ? 'text-red-600 font-semibold' : 
+      isNearLimit ? 'text-orange-600' : 
+      'text-gray-500'
+    }`}>
+      {currentLength}/{maxLength}
+    </div>
+  );
+}
+
 export default function WizardPage() {
   const searchParams = useSearchParams();
   const [currentStep, setCurrentStep] = useState(1);
@@ -236,8 +279,27 @@ export default function WizardPage() {
     if (funnelId && currentFunnelId === null) {
       const savedFunnel = getFunnelById(funnelId);
       if (savedFunnel) {
+        // Check if the template exists (for uploaded templates)
+        let templateId = savedFunnel.templateId;
+        if (templateId !== 'creatine-report') {
+          const templateExists = uploadedTemplates.some(t => t.id === templateId);
+          if (!templateExists) {
+            // Template not found - reset to default and show warning
+            templateId = 'creatine-report';
+            setErrorMessage(
+              `⚠️ Template "${savedFunnel.templateId}" used in this saved funnel is no longer available in your browser. ` +
+              `This happens when browser storage (localStorage) is cleared or you're using a different browser/device. ` +
+              `I've automatically switched to the default "Creatine Report" template. ` +
+              `Your content is safe - you can select a different template in Step 1 if needed. ` +
+              `If you have the template file, you can re-upload it.`
+            );
+            // Clear slotData since it's for a different template
+            setTimeout(() => setErrorMessage(null), 15000); // Clear after 15 seconds
+          }
+        }
+        
         setData({
-          templateId: savedFunnel.templateId,
+          templateId: templateId as TemplateId,
           productName: savedFunnel.productName,
           productUrl: savedFunnel.productUrl,
           websiteUrl: savedFunnel.websiteUrl || '',
@@ -269,12 +331,12 @@ export default function WizardPage() {
           },
           newsletterTitle: savedFunnel.newsletterTitle || 'Stay Updated',
           newsletterDesc: savedFunnel.newsletterDesc || 'Get the latest creatine research, product reviews, and fitness tips delivered to your inbox.',
-          slotData: savedFunnel.slotData || undefined,
+          slotData: templateId === savedFunnel.templateId ? savedFunnel.slotData : undefined, // Only keep slotData if template matches
         });
         setCurrentFunnelId(savedFunnel.id);
       }
     }
-  }, [searchParams, currentFunnelId]);
+  }, [searchParams, currentFunnelId, uploadedTemplates]);
 
   const updateField = (field: keyof WizardData, value: string | { customerService: string; valueRating: string; customerRating: string; overallRating: string }) => {
     setData(prev => ({ ...prev, [field]: value }));
@@ -340,11 +402,16 @@ export default function WizardPage() {
     setErrorMessage(null);
 
     try {
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+      
       const response = await fetch('/api/generate-core-narrative', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        signal: controller.signal,
         body: JSON.stringify({
           productName: data.productName,
           mainKeyword: data.mainKeyword,
@@ -360,6 +427,8 @@ export default function WizardPage() {
           tone: data.tone,
         }),
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -368,6 +437,7 @@ export default function WizardPage() {
             ? `${errorData.error}${errorData.details ? `: ${errorData.details}` : ''}`
             : 'Core narrative generation failed. Please try again.'
         );
+        setIsGeneratingCoreNarrative(false);
         return;
       }
 
@@ -375,28 +445,57 @@ export default function WizardPage() {
       
       if (result.error) {
         setErrorMessage(`${result.error}${result.details ? `: ${result.details}` : ''}`);
+        setIsGeneratingCoreNarrative(false);
         return;
       }
       
       updateField('coreNarrative', result.coreNarrative);
       setErrorMessage(null);
-    } catch (error) {
+      setIsGeneratingCoreNarrative(false);
+    } catch (error: any) {
       console.error('Core narrative generation error:', error);
-      setErrorMessage('Core narrative generation failed. Please try again.');
-    } finally {
+      
+      // Check if it's a timeout or abort error
+      if (error.name === 'AbortError' || error.message?.includes('timeout')) {
+        setErrorMessage('Request timed out. The AI generation is taking longer than expected. Please try again or check your internet connection.');
+      } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+        setErrorMessage('Network error. Please check your internet connection and try again.');
+      } else {
+        setErrorMessage(`Core narrative generation failed: ${error.message || 'Unknown error'}. Please try again.`);
+      }
+      
       setIsGeneratingCoreNarrative(false);
     }
   };
 
   // Handler for mapping core narrative to slots (when moving from Step 3 to Step 4)
-  const handleMapNarrativeToSlots = async () => {
+  // Returns true if successful, false if failed
+  const handleMapNarrativeToSlots = async (): Promise<boolean> => {
     if (!data.coreNarrative.trim()) {
       setErrorMessage('Core narrative is required to map to slots.');
-      return;
+      return false;
+    }
+
+    // Check if template exists (for uploaded templates)
+    if (data.templateId !== 'creatine-report') {
+      const templateExists = uploadedTemplates.some(t => t.id === data.templateId);
+      if (!templateExists) {
+        setErrorMessage(
+          `Template "${data.templateId}" is no longer available. ` +
+          `Please go back to Step 1 and select a different template, or use the default "Creatine Report" template.`
+        );
+        return false;
+      }
     }
 
     setIsMappingToSlots(true);
     setErrorMessage(null);
+
+    // Get template slots if it's an uploaded template
+    const selected = getSelectedTemplate();
+    const templateSlots = selected.type === 'uploaded' && selected.template 
+      ? selected.template.slots 
+      : undefined;
 
     try {
       const response = await fetch('/api/map-narrative-to-slots', {
@@ -419,6 +518,7 @@ export default function WizardPage() {
             ? data.targetStates 
             : (data.region ? data.region.split(',').map(s => s.trim()).filter(s => s) : undefined),
           tone: data.tone,
+          templateSlots, // Send template slots for uploaded templates
         }),
       });
 
@@ -440,6 +540,20 @@ export default function WizardPage() {
           }
         }
         
+        // Check if it's a template not found error
+        if (errorMessage?.includes('not found') || errorDetails?.includes('not found')) {
+          setErrorMessage(
+            `⚠️ Template "${data.templateId}" is no longer available in your browser. ` +
+            `This happens when browser storage (localStorage) is cleared or you're using a different browser/device. ` +
+            `Your content is safe, but you need to select a template. ` +
+            `Please go back to Step 1 and select a different template, or use the default "Creatine Report" template. ` +
+            `If you have the template file, you can re-upload it.`
+          );
+          // Auto-switch to default template to prevent further errors
+          setData(prev => ({ ...prev, templateId: 'creatine-report' as TemplateId }));
+          return false;
+        }
+        
         // Check if it's a rate limit error and provide helpful message
         let displayMessage = errorDetails 
           ? `${errorMessage}: ${errorDetails}`
@@ -450,59 +564,94 @@ export default function WizardPage() {
         }
         
         setErrorMessage(displayMessage);
-        return;
+        return false;
       }
 
       let result;
       try {
         result = await response.json();
+        console.log('📥 API Response received:', result);
       } catch (jsonError) {
         console.error('Failed to parse response JSON:', jsonError);
         setErrorMessage('Failed to parse server response. Please check the console for details.');
-        return;
+        return false;
       }
       
       if (result.error) {
         const errorMsg = result.error;
         const errorDetails = result.details || result.hint || '';
         const slotErrors = result.slotErrors ? Object.keys(result.slotErrors).join(', ') : '';
+        console.error('❌ API returned error:', errorMsg, errorDetails);
         setErrorMessage(
           `${errorMsg}${errorDetails ? `: ${errorDetails}` : ''}${slotErrors ? ` (Slots with errors: ${slotErrors})` : ''}`
         );
-        return;
+        return false;
+      }
+      
+      if (!result.slots || Object.keys(result.slots).length === 0) {
+        console.warn('⚠️ No slots returned from API');
+        setErrorMessage('No content was generated. Please try again or check the console for details.');
+        return false;
       }
       
       // Update all slot fields with mapped content
       if (result.slots) {
-        Object.keys(result.slots).forEach(slotId => {
-          if (result.slots[slotId]) {
-            let processedContent = result.slots[slotId];
-            // Add bullet points for mainBenefits list
-            if (slotId === 'mainBenefits') {
-              const lines = processedContent.split('\n');
-              processedContent = lines
-                .map(line => {
-                  const trimmed = line.trim();
-                  if (trimmed === '') return '';
-                  // If line doesn't already have a bullet point, add one
-                  if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
-                    return '• ' + trimmed;
-                  }
-                  return trimmed;
-                })
-                .filter(line => line !== '')
-                .join('\n');
+        const selected = getSelectedTemplate();
+        console.log('📦 Mapping result:', result.slots);
+        console.log('📋 Template type:', selected.type);
+        console.log('🔢 Number of slots to update:', Object.keys(result.slots).length);
+        
+        // Batch update all slots at once for better performance
+        if (selected.type === 'uploaded') {
+          // For uploaded templates, update all slots in slotData at once
+          setData(prev => {
+            const newSlotData = { ...prev.slotData || {} };
+            Object.keys(result.slots).forEach(slotId => {
+              if (result.slots[slotId]) {
+                newSlotData[slotId] = result.slots[slotId];
+              }
+            });
+            console.log('✅ Updated slotData:', newSlotData);
+            return {
+              ...prev,
+              slotData: newSlotData
+            };
+          });
+        } else {
+          // For CreatineReport template, update fields individually
+          Object.keys(result.slots).forEach(slotId => {
+            if (result.slots[slotId]) {
+              let processedContent = result.slots[slotId];
+              // Add bullet points for mainBenefits list
+              if (slotId === 'mainBenefits') {
+                const lines = processedContent.split('\n');
+                processedContent = lines
+                  .map(line => {
+                    const trimmed = line.trim();
+                    if (trimmed === '') return '';
+                    // If line doesn't already have a bullet point, add one
+                    if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
+                      return '• ' + trimmed;
+                    }
+                    return trimmed;
+                  })
+                  .filter(line => line !== '')
+                  .join('\n');
+              }
+              updateField(slotId as keyof WizardData, processedContent);
             }
-            updateField(slotId as keyof WizardData, processedContent);
-          }
-        });
+          });
+        }
+      } else {
+        console.warn('⚠️ No slots in result:', result);
       }
       
       setErrorMessage(null);
-      // Note: Step navigation is handled by the Next button click handler
+      return true; // Success
     } catch (error) {
       console.error('Narrative mapping error:', error);
       setErrorMessage('Failed to map narrative to slots. Please try again.');
+      return false;
     } finally {
       setIsMappingToSlots(false);
     }
@@ -517,6 +666,19 @@ export default function WizardPage() {
 
     setIsGenerating(true);
     setErrorMessage(null);
+
+    // Get maxLength for this slot
+    let maxLength: number | undefined;
+    const selected = getSelectedTemplate();
+    if (selected.type === 'system') {
+      // CreatineReport template
+      maxLength = getFieldMaxLength(slotId);
+    } else if (selected.type === 'uploaded' && selected.template) {
+      // Uploaded template - get from template fields
+      const templateFields = getUploadedTemplateFields(selected.template.slots);
+      const field = templateFields.find(f => f.slotId === slotId);
+      maxLength = field?.maxLength;
+    }
 
     try {
       const response = await fetch('/api/regenerate-slot', {
@@ -540,6 +702,7 @@ export default function WizardPage() {
             ? data.targetStates 
             : (data.region ? data.region.split(',').map(s => s.trim()).filter(s => s) : undefined),
           tone: data.tone,
+          maxLength,
         }),
       });
 
@@ -1398,16 +1561,20 @@ export default function WizardPage() {
                         <span className="ml-2 text-green-600 text-sm">✓ Generated</span>
                       )}
                     </label>
-                    <textarea
-                      value={data.coreNarrative}
-                      onChange={(e) => updateField('coreNarrative', e.target.value)}
-                      placeholder="The master narrative will appear here after generation. You can edit it to adjust the overall angle before distributing to slots."
-                      rows={20}
-                      className={`w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                        data.coreNarrative ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                      }`}
-                      style={{ fontSize: '16px', lineHeight: '1.6', fontFamily: 'monospace' }}
-                    />
+                    <div className="relative">
+                      <textarea
+                        value={data.coreNarrative}
+                        onChange={(e) => updateField('coreNarrative', e.target.value)}
+                        placeholder="The master narrative will appear here after generation. You can edit it to adjust the overall angle before distributing to slots."
+                        rows={20}
+                        maxLength={5000}
+                        className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                          data.coreNarrative ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                        }`}
+                        style={{ fontSize: '16px', lineHeight: '1.6', fontFamily: 'monospace' }}
+                      />
+                      <CharacterCounter value={data.coreNarrative} maxLength={5000} />
+                    </div>
                     {data.coreNarrative && (
                       <p className="mt-2 text-xs text-gray-500">
                         💡 Tip: Review and edit this narrative to ensure it captures your desired angle. 
@@ -1488,15 +1655,19 @@ export default function WizardPage() {
                           </button>
                         )}
                       </div>
-                      <input
-                        type="text"
-                        value={data.pageHeadline}
-                        onChange={(e) => updateField('pageHeadline', e.target.value)}
-                        placeholder="e.g. Does Creatine Cause Bloating? Here's What Science Says"
-                        className={`w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          data.pageHeadline ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                        }`}
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={data.pageHeadline}
+                          onChange={(e) => updateField('pageHeadline', e.target.value)}
+                          placeholder="e.g. Does Creatine Cause Bloating? Here's What Science Says"
+                          maxLength={getFieldMaxLength('pageHeadline')}
+                          className={`w-full px-4 py-2 pr-16 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                            data.pageHeadline ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                          }`}
+                        />
+                        <CharacterCounter value={data.pageHeadline} maxLength={getFieldMaxLength('pageHeadline')} />
+                      </div>
                     </div>
 
                     <div>
@@ -1517,16 +1688,20 @@ export default function WizardPage() {
                           </button>
                         )}
                       </div>
-                      <textarea
-                        value={data.introParagraph}
-                        onChange={(e) => updateField('introParagraph', e.target.value)}
-                        placeholder="Write a brief introduction..."
-                        rows={4}
-                        className={`w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          data.introParagraph ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                        }`}
-                        style={{ fontSize: '22px', lineHeight: '1.6', minHeight: '100px' }}
-                      />
+                      <div className="relative">
+                        <textarea
+                          value={data.introParagraph}
+                          onChange={(e) => updateField('introParagraph', e.target.value)}
+                          placeholder="Write a brief introduction..."
+                          rows={4}
+                          maxLength={getFieldMaxLength('introParagraph')}
+                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                            data.introParagraph ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                          }`}
+                          style={{ fontSize: '22px', lineHeight: '1.6', minHeight: '100px' }}
+                        />
+                        <CharacterCounter value={data.introParagraph} maxLength={getFieldMaxLength('introParagraph')} />
+                      </div>
                     </div>
 
                     <div>
@@ -1547,53 +1722,57 @@ export default function WizardPage() {
                           </button>
                         )}
                       </div>
-                      <textarea
-                        value={data.mainBenefits}
-                        onChange={(e) => {
-                          let value = e.target.value;
-                          // Auto-add bullet points to each line if not present
-                          const lines = value.split('\n');
-                          const processedLines = lines.map((line, index) => {
-                            const trimmed = line.trim();
-                            // Skip empty lines
-                            if (trimmed === '') return '';
-                            // If line doesn't start with bullet point, add it
-                            if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
-                              return '• ' + trimmed;
-                            }
-                            return line;
-                          });
-                          // Join lines, preserving original line breaks for empty lines
-                          const result = lines.map((line, index) => {
-                            if (line.trim() === '') return line;
-                            return processedLines[index] || line;
-                          }).join('\n');
-                          updateField('mainBenefits', result);
-                        }}
-                        onBlur={(e) => {
-                          // Ensure all non-empty lines have bullet points on blur
-                          let value = e.target.value;
-                          const lines = value.split('\n');
-                          const processedLines = lines.map((line) => {
-                            const trimmed = line.trim();
-                            if (trimmed === '') return '';
-                            if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
-                              return '• ' + trimmed;
-                            }
-                            return line;
-                          });
-                          const result = processedLines.join('\n');
-                          if (result !== value) {
+                      <div className="relative">
+                        <textarea
+                          value={data.mainBenefits}
+                          onChange={(e) => {
+                            let value = e.target.value;
+                            // Auto-add bullet points to each line if not present
+                            const lines = value.split('\n');
+                            const processedLines = lines.map((line, index) => {
+                              const trimmed = line.trim();
+                              // Skip empty lines
+                              if (trimmed === '') return '';
+                              // If line doesn't start with bullet point, add it
+                              if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
+                                return '• ' + trimmed;
+                              }
+                              return line;
+                            });
+                            // Join lines, preserving original line breaks for empty lines
+                            const result = lines.map((line, index) => {
+                              if (line.trim() === '') return line;
+                              return processedLines[index] || line;
+                            }).join('\n');
                             updateField('mainBenefits', result);
-                          }
-                        }}
-                        placeholder="• Increases muscle strength&#10;• Improves workout performance&#10;• Enhances muscle recovery"
-                        rows={6}
-                        className={`w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          data.mainBenefits ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                        }`}
-                        style={{ fontSize: '22px', lineHeight: '1.6' }}
-                      />
+                          }}
+                          onBlur={(e) => {
+                            // Ensure all non-empty lines have bullet points on blur
+                            let value = e.target.value;
+                            const lines = value.split('\n');
+                            const processedLines = lines.map((line) => {
+                              const trimmed = line.trim();
+                              if (trimmed === '') return '';
+                              if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
+                                return '• ' + trimmed;
+                              }
+                              return line;
+                            });
+                            const result = processedLines.join('\n');
+                            if (result !== value) {
+                              updateField('mainBenefits', result);
+                            }
+                          }}
+                          placeholder="• Increases muscle strength&#10;• Improves workout performance&#10;• Enhances muscle recovery"
+                          rows={6}
+                          maxLength={getFieldMaxLength('mainBenefits')}
+                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                            data.mainBenefits ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                          }`}
+                          style={{ fontSize: '22px', lineHeight: '1.6' }}
+                        />
+                        <CharacterCounter value={data.mainBenefits} maxLength={getFieldMaxLength('mainBenefits')} />
+                      </div>
                     </div>
 
                     <div className="pt-4 border-t border-gray-200">
@@ -1615,16 +1794,20 @@ export default function WizardPage() {
                           </button>
                         )}
                       </div>
-                      <textarea
-                        value={data.effectivenessParagraphs}
-                        onChange={(e) => updateField('effectivenessParagraphs', e.target.value)}
-                        placeholder="First paragraph about effectiveness...&#10;Second paragraph...&#10;Third paragraph..."
-                        rows={6}
-                        className={`w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          data.effectivenessParagraphs ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                        }`}
-                        style={{ fontSize: '22px', lineHeight: '1.6' }}
-                      />
+                      <div className="relative">
+                        <textarea
+                          value={data.effectivenessParagraphs}
+                          onChange={(e) => updateField('effectivenessParagraphs', e.target.value)}
+                          placeholder="First paragraph about effectiveness...&#10;Second paragraph...&#10;Third paragraph..."
+                          rows={6}
+                          maxLength={getFieldMaxLength('effectivenessParagraphs')}
+                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                            data.effectivenessParagraphs ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                          }`}
+                          style={{ fontSize: '22px', lineHeight: '1.6' }}
+                        />
+                        <CharacterCounter value={data.effectivenessParagraphs} maxLength={getFieldMaxLength('effectivenessParagraphs')} />
+                      </div>
                     </div>
 
                     <div className="pt-4 border-t border-gray-200">
@@ -1646,16 +1829,20 @@ export default function WizardPage() {
                           </button>
                         )}
                       </div>
-                      <textarea
-                        value={data.comparisonParagraphs}
-                        onChange={(e) => updateField('comparisonParagraphs', e.target.value)}
-                        placeholder="First comparison paragraph...&#10;Second comparison paragraph...&#10;Third comparison paragraph..."
-                        rows={6}
-                        className={`w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          data.comparisonParagraphs ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                        }`}
-                        style={{ fontSize: '22px', lineHeight: '1.6' }}
-                      />
+                      <div className="relative">
+                        <textarea
+                          value={data.comparisonParagraphs}
+                          onChange={(e) => updateField('comparisonParagraphs', e.target.value)}
+                          placeholder="First comparison paragraph...&#10;Second comparison paragraph...&#10;Third comparison paragraph..."
+                          rows={6}
+                          maxLength={getFieldMaxLength('comparisonParagraphs')}
+                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                            data.comparisonParagraphs ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                          }`}
+                          style={{ fontSize: '22px', lineHeight: '1.6' }}
+                        />
+                        <CharacterCounter value={data.comparisonParagraphs} maxLength={getFieldMaxLength('comparisonParagraphs')} />
+                      </div>
                     </div>
 
                     <div className="pt-4 border-t border-gray-200">
@@ -1677,16 +1864,20 @@ export default function WizardPage() {
                           </button>
                         )}
                       </div>
-                      <textarea
-                        value={data.reviewParagraphs}
-                        onChange={(e) => updateField('reviewParagraphs', e.target.value)}
-                        placeholder="First review paragraph...&#10;Second review paragraph...&#10;Third review paragraph..."
-                        rows={6}
-                        className={`w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          data.reviewParagraphs ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                        }`}
-                        style={{ fontSize: '22px', lineHeight: '1.6' }}
-                      />
+                      <div className="relative">
+                        <textarea
+                          value={data.reviewParagraphs}
+                          onChange={(e) => updateField('reviewParagraphs', e.target.value)}
+                          placeholder="First review paragraph...&#10;Second review paragraph...&#10;Third review paragraph..."
+                          rows={6}
+                          maxLength={getFieldMaxLength('reviewParagraphs')}
+                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                            data.reviewParagraphs ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                          }`}
+                          style={{ fontSize: '22px', lineHeight: '1.6' }}
+                        />
+                        <CharacterCounter value={data.reviewParagraphs} maxLength={getFieldMaxLength('reviewParagraphs')} />
+                      </div>
                     </div>
 
                     <div className="pt-4 border-t border-gray-200">
@@ -1708,16 +1899,20 @@ export default function WizardPage() {
                           </button>
                         )}
                       </div>
-                      <textarea
-                        value={data.bottomLineParagraph}
-                        onChange={(e) => updateField('bottomLineParagraph', e.target.value)}
-                        placeholder="Write a concluding paragraph..."
-                        rows={4}
-                        className={`w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          data.bottomLineParagraph ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                        }`}
-                        style={{ fontSize: '22px', lineHeight: '1.6' }}
-                      />
+                      <div className="relative">
+                        <textarea
+                          value={data.bottomLineParagraph}
+                          onChange={(e) => updateField('bottomLineParagraph', e.target.value)}
+                          placeholder="Write a concluding paragraph..."
+                          rows={4}
+                          maxLength={getFieldMaxLength('bottomLineParagraph')}
+                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                            data.bottomLineParagraph ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                          }`}
+                          style={{ fontSize: '22px', lineHeight: '1.6' }}
+                        />
+                        <CharacterCounter value={data.bottomLineParagraph} maxLength={getFieldMaxLength('bottomLineParagraph')} />
+                      </div>
                     </div>
 
                     <div className="pt-4 border-t border-gray-200">
@@ -1741,16 +1936,20 @@ export default function WizardPage() {
                               </button>
                             )}
                           </div>
-                          <textarea
-                            value={data.sidebarDiscoverItems}
-                            onChange={(e) => updateField('sidebarDiscoverItems', e.target.value)}
-                            placeholder="How creatine monohydrate works in your body&#10;The science behind muscle strength gains&#10;Optimal dosing strategies for best results"
-                            rows={5}
-                            className={`w-full px-4 py-2 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                              data.sidebarDiscoverItems ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                            }`}
-                            style={{ fontSize: '22px', lineHeight: '1.6' }}
-                          />
+                          <div className="relative">
+                            <textarea
+                              value={data.sidebarDiscoverItems}
+                              onChange={(e) => updateField('sidebarDiscoverItems', e.target.value)}
+                              placeholder="How creatine monohydrate works in your body&#10;The science behind muscle strength gains&#10;Optimal dosing strategies for best results"
+                              rows={5}
+                              maxLength={getFieldMaxLength('sidebarDiscoverItems')}
+                              className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                data.sidebarDiscoverItems ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                              }`}
+                              style={{ fontSize: '22px', lineHeight: '1.6' }}
+                            />
+                            <CharacterCounter value={data.sidebarDiscoverItems} maxLength={getFieldMaxLength('sidebarDiscoverItems')} />
+                          </div>
                         </div>
                         <div>
                           <div className="flex items-center justify-between mb-2">
@@ -1770,16 +1969,20 @@ export default function WizardPage() {
                               </button>
                             )}
                           </div>
-                          <textarea
-                            value={data.sidebarTopItems}
-                            onChange={(e) => updateField('sidebarTopItems', e.target.value)}
-                            placeholder="Purity and quality of ingredients&#10;Dosage and serving size&#10;Price and value for money"
-                            rows={6}
-                            className={`w-full px-4 py-2 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                              data.sidebarTopItems ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                            }`}
-                            style={{ fontSize: '22px', lineHeight: '1.6' }}
-                          />
+                          <div className="relative">
+                            <textarea
+                              value={data.sidebarTopItems}
+                              onChange={(e) => updateField('sidebarTopItems', e.target.value)}
+                              placeholder="Purity and quality of ingredients&#10;Dosage and serving size&#10;Price and value for money"
+                              rows={6}
+                              maxLength={getFieldMaxLength('sidebarTopItems')}
+                              className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                data.sidebarTopItems ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                              }`}
+                              style={{ fontSize: '22px', lineHeight: '1.6' }}
+                            />
+                            <CharacterCounter value={data.sidebarTopItems} maxLength={getFieldMaxLength('sidebarTopItems')} />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1867,15 +2070,19 @@ export default function WizardPage() {
                               </button>
                             )}
                           </div>
-                          <input
-                            type="text"
-                            value={data.newsletterTitle}
-                            onChange={(e) => updateField('newsletterTitle', e.target.value)}
-                            placeholder="Stay Updated"
-                            className={`w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                              data.newsletterTitle ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                            }`}
-                          />
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={data.newsletterTitle}
+                              onChange={(e) => updateField('newsletterTitle', e.target.value)}
+                              placeholder="Stay Updated"
+                              maxLength={getFieldMaxLength('newsletterTitle')}
+                              className={`w-full px-4 py-2 pr-16 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                data.newsletterTitle ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                              }`}
+                            />
+                            <CharacterCounter value={data.newsletterTitle} maxLength={getFieldMaxLength('newsletterTitle')} />
+                          </div>
                         </div>
                         <div>
                           <div className="flex items-center justify-between mb-2">
@@ -1895,16 +2102,20 @@ export default function WizardPage() {
                               </button>
                             )}
                           </div>
-                          <textarea
-                            value={data.newsletterDesc}
-                            onChange={(e) => updateField('newsletterDesc', e.target.value)}
-                            placeholder="Get the latest creatine research, product reviews, and fitness tips delivered to your inbox."
-                            rows={3}
-                            className={`w-full px-4 py-2 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                              data.newsletterDesc ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                            }`}
-                            style={{ fontSize: '22px', lineHeight: '1.6' }}
-                          />
+                          <div className="relative">
+                            <textarea
+                              value={data.newsletterDesc}
+                              onChange={(e) => updateField('newsletterDesc', e.target.value)}
+                              placeholder="Get the latest creatine research, product reviews, and fitness tips delivered to your inbox."
+                              rows={3}
+                              maxLength={getFieldMaxLength('newsletterDesc')}
+                              className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                data.newsletterDesc ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                              }`}
+                              style={{ fontSize: '22px', lineHeight: '1.6' }}
+                            />
+                            <CharacterCounter value={data.newsletterDesc} maxLength={getFieldMaxLength('newsletterDesc')} />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1972,37 +2183,51 @@ export default function WizardPage() {
                                 mainKeyword={data.mainKeyword}
                               />
                             ) : slot.type === 'list' ? (
-                              <textarea
-                                value={slotValue}
-                                onChange={(e) => {
-                                  setData(prev => ({
-                                    ...prev,
-                                    slotData: { ...prev.slotData || {}, [slot.id]: e.target.value }
-                                  }));
-                                }}
-                                placeholder={`Enter ${slot.label.toLowerCase()} (one per line)`}
-                                rows={slot.type === 'list' ? 6 : 4}
-                                className={`w-full px-4 py-2 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                  isFilled ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                                }`}
-                                style={{ fontSize: '22px', lineHeight: '1.6' }}
-                              />
+                              <div className="relative">
+                                <textarea
+                                  value={slotValue}
+                                  onChange={(e) => {
+                                    setData(prev => ({
+                                      ...prev,
+                                      slotData: { ...prev.slotData || {}, [slot.id]: e.target.value }
+                                    }));
+                                  }}
+                                  placeholder={`Enter ${slot.label.toLowerCase()} (one per line)`}
+                                  rows={slot.type === 'list' ? 6 : 4}
+                                  maxLength={selected.template ? getUploadedSlotMaxLength(slot.id, selected.template) : undefined}
+                                  className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                    isFilled ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                                  }`}
+                                  style={{ fontSize: '22px', lineHeight: '1.6' }}
+                                />
+                                <CharacterCounter 
+                                  value={slotValue} 
+                                  maxLength={selected.template ? getUploadedSlotMaxLength(slot.id, selected.template) : undefined} 
+                                />
+                              </div>
                             ) : (
-                              <textarea
-                                value={slotValue}
-                                onChange={(e) => {
-                                  setData(prev => ({
-                                    ...prev,
-                                    slotData: { ...prev.slotData || {}, [slot.id]: e.target.value }
-                                  }));
-                                }}
-                                placeholder={`Enter ${slot.label.toLowerCase()}`}
-                                rows={4}
-                                className={`w-full px-4 py-2 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                  isFilled ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                                }`}
-                                style={{ fontSize: '22px', lineHeight: '1.6' }}
-                              />
+                              <div className="relative">
+                                <textarea
+                                  value={slotValue}
+                                  onChange={(e) => {
+                                    setData(prev => ({
+                                      ...prev,
+                                      slotData: { ...prev.slotData || {}, [slot.id]: e.target.value }
+                                    }));
+                                  }}
+                                  placeholder={`Enter ${slot.label.toLowerCase()}`}
+                                  rows={4}
+                                  maxLength={selected.template ? getUploadedSlotMaxLength(slot.id, selected.template) : undefined}
+                                  className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                                    isFilled ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                                  }`}
+                                  style={{ fontSize: '22px', lineHeight: '1.6' }}
+                                />
+                                <CharacterCounter 
+                                  value={slotValue} 
+                                  maxLength={selected.template ? getUploadedSlotMaxLength(slot.id, selected.template) : undefined} 
+                                />
+                              </div>
                             )}
                           </div>
                         );
@@ -2040,9 +2265,8 @@ export default function WizardPage() {
                   onClick={async () => {
                     if (currentStep === 3 && data.coreNarrative.trim()) {
                       // Step 3: Map narrative to slots before proceeding
-                      await handleMapNarrativeToSlots();
-                      // Only proceed if mapping was successful (no error message)
-                      if (!errorMessage) {
+                      const success = await handleMapNarrativeToSlots();
+                      if (success) {
                         setCurrentStep(4);
                       }
                     } else {
@@ -2168,54 +2392,6 @@ export default function WizardPage() {
                 </div>
               </div>
 
-              {/* Content draft */}
-              <div>
-                <h4 className="text-lg font-semibold text-gray-700 mb-3">
-                  Content Draft
-                </h4>
-                <div className="space-y-2 text-base">
-                  {/* Helper function to check if content is filled */}
-                  {(() => {
-                    const isFilled = (content: string | undefined | null): boolean => {
-                      return content ? content.trim().length > 0 : false;
-                    };
-                    
-                    const sections = [
-                      { label: 'Headline', filled: isFilled(data.pageHeadline) },
-                      { label: 'Intro', filled: isFilled(data.introParagraph) },
-                      { label: 'Benefits', filled: isFilled(data.mainBenefits) },
-                      { label: 'Effectiveness Paragraphs', filled: isFilled(data.effectivenessParagraphs) },
-                      { label: 'Comparison Paragraphs', filled: isFilled(data.comparisonParagraphs) },
-                      { label: 'Review Paragraphs', filled: isFilled(data.reviewParagraphs) },
-                      { label: 'Bottom Line Paragraph', filled: isFilled(data.bottomLineParagraph) },
-                      { label: 'Sidebar Discover Items', filled: isFilled(data.sidebarDiscoverItems) },
-                      { label: 'Sidebar Top Items', filled: isFilled(data.sidebarTopItems) },
-                      { 
-                        label: 'Ratings', 
-                        filled: data.ratings.customerService?.trim() && 
-                               data.ratings.valueRating?.trim() && 
-                               data.ratings.customerRating?.trim() && 
-                               data.ratings.overallRating?.trim() 
-                      },
-                      { label: 'Newsletter Title', filled: isFilled(data.newsletterTitle) },
-                      { label: 'Newsletter Description', filled: isFilled(data.newsletterDesc) },
-                    ];
-                    
-                    return sections.map((section, index) => (
-                      <div key={index} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
-                        <span className="text-gray-600 text-base">{section.label}:</span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-sm font-medium ${
-                          section.filled
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          {section.filled ? '✓ Filled' : '○ Empty'}
-                        </span>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </div>
             </div>
           </div>
         </div>
