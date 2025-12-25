@@ -64,3 +64,24 @@ export function deleteFunnel(id: string): FunnelConfig[] {
   return filtered;
 }
 
+export function duplicateFunnel(id: string): FunnelConfig | null {
+  const funnels = loadFunnels();
+  const original = funnels.find((f) => f.id === id);
+  
+  if (!original) {
+    return null;
+  }
+  
+  // Create a duplicate with new ID and name
+  const duplicate: FunnelConfig = {
+    ...original,
+    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    name: `${original.name} (Copy)`,
+    createdAt: new Date().toISOString(),
+  };
+  
+  // Save the duplicate
+  upsertFunnel(duplicate);
+  return duplicate;
+}
+

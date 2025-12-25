@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { optimizeImage, shouldOptimizeImage } from "@/lib/image-optimization";
 
 interface ImageSlotUploadProps {
   slotId: string;
@@ -31,6 +32,8 @@ export function ImageSlotUpload({
   const [aiError, setAiError] = useState<string | null>(null);
   const [fileSize, setFileSize] = useState<number | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [autoOptimize, setAutoOptimize] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
@@ -72,7 +75,52 @@ export function ImageSlotUpload({
     setIsUploading(true);
 
     try {
-      // Convert to base64 data URL for preview and storage
+      // Check if optimization is needed
+      const needsOptimization = await shouldOptimizeImage(
+        file,
+        500, // maxSizeKB
+        dimensions?.width || 1920,
+        dimensions?.height || 1920
+      );
+
+      if (needsOptimization && autoOptimize) {
+        setIsOptimizing(true);
+        try {
+          // Optimize the image
+          const optimized = await optimizeImage(file, {
+            maxWidth: dimensions?.width || 1920,
+            maxHeight: dimensions?.height || 1920,
+            quality: 0.85,
+            format: 'webp',
+            maxSizeKB: 500,
+          });
+
+          // Convert optimized blob to data URL
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const dataUrl = event.target?.result as string;
+            setPreview(dataUrl);
+            onChange(dataUrl);
+            setFileSize(optimized.size);
+            setImageDimensions({ width: optimized.width, height: optimized.height });
+            setIsUploading(false);
+            setIsOptimizing(false);
+          };
+          reader.onerror = () => {
+            alert("Failed to process optimized image");
+            setIsUploading(false);
+            setIsOptimizing(false);
+            setFileSize(null);
+          };
+          reader.readAsDataURL(optimized.blob);
+          return;
+        } catch (optimizeError) {
+          // Fall through to regular upload if optimization fails
+          setIsOptimizing(false);
+        }
+      }
+
+      // Regular upload (no optimization or optimization disabled)
       const reader = new FileReader();
       reader.onload = (event) => {
         const dataUrl = event.target?.result as string;
@@ -94,7 +142,6 @@ export function ImageSlotUpload({
       };
       reader.readAsDataURL(file);
     } catch (error) {
-      console.error("Error uploading image:", error);
       alert("Failed to upload image");
       setIsUploading(false);
       setFileSize(null);
@@ -187,7 +234,6 @@ export function ImageSlotUpload({
         setPreview(imageUrl);
         onChange(imageUrl);
         setAiError(null); // Clear any previous errors
-        console.log(`✅ Image generated successfully using model: ${data.model || 'unknown'}`);
         
         // Get image dimensions
         const img = new Image();
@@ -203,7 +249,6 @@ export function ImageSlotUpload({
         setAiError(data.error || 'Image generation returned no image data');
       }
     } catch (error: any) {
-      console.error('Error generating image:', error);
       setAiError(error.message || 'Failed to generate image. Please try again.');
     } finally {
       setIsGenerating(false);
@@ -264,14 +309,16 @@ export function ImageSlotUpload({
           <label
             htmlFor={`file-input-${slotId}`}
             className={`block w-full px-4 py-3 border-2 border-dashed rounded-lg cursor-pointer transition-colors text-center ${
-              isUploading
+              isUploading || isOptimizing
                 ? "border-gray-300 bg-gray-50 cursor-not-allowed"
                 : preview
                 ? "border-green-300 bg-green-50 hover:border-green-400"
                 : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"
             }`}
           >
-            {isUploading ? (
+            {isOptimizing ? (
+              <span className="text-gray-600">Optimizing image...</span>
+            ) : isUploading ? (
               <span className="text-gray-600">Uploading...</span>
             ) : preview ? (
               <span className="text-green-700 font-medium">✓ Image uploaded - Click to change</span>
@@ -279,6 +326,17 @@ export function ImageSlotUpload({
               <span className="text-gray-700">Click to upload image or drag and drop</span>
             )}
           </label>
+          <div className="flex items-center gap-2 text-xs">
+            <label className="flex items-center gap-1 text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoOptimize}
+                onChange={(e) => setAutoOptimize(e.target.checked)}
+                className="rounded"
+              />
+              <span>Auto-optimize (resize & compress)</span>
+            </label>
+          </div>
           <div className="flex items-center justify-between text-xs">
             {dimensions && (
               <p className="text-gray-600 font-medium">

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FunnelConfig } from '@/lib/funnels/types';
-import { loadFunnels } from '@/lib/funnels/storage';
+import { loadFunnels, deleteFunnel, duplicateFunnel } from '@/lib/funnels/storage';
 import { TEMPLATES } from '@/lib/templates/registry';
 
 export default function FunnelsPage() {
@@ -20,6 +20,25 @@ export default function FunnelsPage() {
 
   const handleLoadInWizard = (funnelId: string) => {
     router.push(`/wizard?id=${encodeURIComponent(funnelId)}`);
+  };
+
+  const handleDuplicate = (funnelId: string) => {
+    const duplicated = duplicateFunnel(funnelId);
+    if (duplicated) {
+      // Reload funnels to show the new duplicate
+      const loaded = loadFunnels();
+      setFunnels(loaded);
+      // Optionally navigate to the duplicated funnel
+      router.push(`/wizard?id=${encodeURIComponent(duplicated.id)}`);
+    }
+  };
+
+  const handleDelete = (funnelId: string) => {
+    if (confirm('Are you sure you want to delete this funnel? This action cannot be undone.')) {
+      deleteFunnel(funnelId);
+      const loaded = loadFunnels();
+      setFunnels(loaded);
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -92,12 +111,35 @@ export default function FunnelsPage() {
                           {formatDate(funnel.createdAt)}
                         </td>
                         <td className="py-4 px-4">
-                          <button
-                            onClick={() => handleLoadInWizard(funnel.id)}
-                            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
-                          >
-                            Load in wizard
-                          </button>
+                          <div className="flex gap-2 flex-wrap">
+                            <button
+                              onClick={() => window.open(`/preview/${funnel.id}`, '_blank', 'noopener,noreferrer')}
+                              className="px-4 py-2 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors font-medium"
+                              title="Preview this funnel in a new tab"
+                            >
+                              👁️ Preview
+                            </button>
+                            <button
+                              onClick={() => handleLoadInWizard(funnel.id)}
+                              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDuplicate(funnel.id)}
+                              className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                              title="Duplicate this funnel"
+                            >
+                              📋 Duplicate
+                            </button>
+                            <button
+                              onClick={() => handleDelete(funnel.id)}
+                              className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium"
+                              title="Delete this funnel"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

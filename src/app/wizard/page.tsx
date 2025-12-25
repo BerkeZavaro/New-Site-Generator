@@ -6,6 +6,8 @@ import { useSearchParams } from 'next/navigation';
 import CreatineReportTemplate, { CreatineReportProps } from '@/components/templates/CreatineReportTemplate';
 import { UploadedTemplateRenderer } from '@/components/templates/UploadedTemplateRenderer';
 import { ImageSlotUpload } from '@/components/templates/ImageSlotUpload';
+import { SuggestButton } from '@/components/content/SuggestButton';
+import { QualityBadge } from '@/components/content/QualityBadge';
 import { TEMPLATES, TemplateId } from '@/lib/templates/registry';
 import { loadUploadedTemplates } from '@/lib/templates/uploadedStorage';
 import type { UploadedTemplate } from '@/lib/templates/uploadedTypes';
@@ -1645,15 +1647,49 @@ export default function WizardPage() {
                             <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
                           )}
                         </label>
-                        {data.coreNarrative && (
-                          <button
-                            onClick={() => handleRegenerateSlot('pageHeadline', 'headline')}
-                            disabled={isGenerating}
-                            className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                          >
-                            {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                          </button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {data.pageHeadline && (
+                            <QualityBadge
+                              field="pageHeadline"
+                              fieldLabel="Page Headline"
+                              content={data.pageHeadline}
+                              context={{
+                                productName: data.productName,
+                                mainKeyword: data.mainKeyword,
+                                tone: data.tone,
+                              }}
+                              minLength={20}
+                              maxLength={getFieldMaxLength('pageHeadline')}
+                              required
+                            />
+                          )}
+                          {data.pageHeadline && (
+                            <SuggestButton
+                              currentContent={data.pageHeadline}
+                              fieldType="headline"
+                              fieldLabel="Page Headline"
+                              context={{
+                                productName: data.productName,
+                                mainKeyword: data.mainKeyword,
+                                tone: data.tone,
+                                ageRange: data.ageRange,
+                                gender: data.gender,
+                                targetStates: data.targetStates,
+                              }}
+                              onSuggestionSelect={(suggestion) => updateField('pageHeadline', suggestion)}
+                              disabled={isGenerating}
+                            />
+                          )}
+                          {data.coreNarrative && (
+                            <button
+                              onClick={() => handleRegenerateSlot('pageHeadline', 'headline')}
+                              disabled={isGenerating}
+                              className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
+                            >
+                              {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className="relative">
                         <input
@@ -1678,15 +1714,48 @@ export default function WizardPage() {
                             <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
                           )}
                         </label>
-                        {data.coreNarrative && (
-                          <button
-                            onClick={() => handleRegenerateSlot('introParagraph', 'paragraph')}
-                            disabled={isGenerating}
-                            className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                          >
-                            {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                          </button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {data.introParagraph && (
+                            <QualityBadge
+                              field="introParagraph"
+                              fieldLabel="Intro Paragraph"
+                              content={data.introParagraph}
+                              context={{
+                                productName: data.productName,
+                                mainKeyword: data.mainKeyword,
+                                tone: data.tone,
+                              }}
+                              minLength={50}
+                              maxLength={getFieldMaxLength('introParagraph')}
+                            />
+                          )}
+                          {data.introParagraph && (
+                            <SuggestButton
+                              currentContent={data.introParagraph}
+                              fieldType="paragraph"
+                              fieldLabel="Intro Paragraph"
+                              context={{
+                                productName: data.productName,
+                                mainKeyword: data.mainKeyword,
+                                tone: data.tone,
+                                ageRange: data.ageRange,
+                                gender: data.gender,
+                                targetStates: data.targetStates,
+                              }}
+                              onSuggestionSelect={(suggestion) => updateField('introParagraph', suggestion)}
+                              disabled={isGenerating}
+                            />
+                          )}
+                          {data.coreNarrative && (
+                            <button
+                              onClick={() => handleRegenerateSlot('introParagraph', 'paragraph')}
+                              disabled={isGenerating}
+                              className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
+                            >
+                              {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className="relative">
                         <textarea
@@ -2431,6 +2500,30 @@ export default function WizardPage() {
                 {isExporting ? 'Building export...' : 'Export for WebDev (ZIP)'}
               </button>
             </div>
+            {/* Content Validation Panel */}
+            <div className="mb-6">
+              <ValidationPanel
+                content={data}
+                context={{
+                  productName: data.productName,
+                  mainKeyword: data.mainKeyword,
+                  tone: data.tone,
+                }}
+                templateId={data.templateId}
+              />
+            </div>
+            {/* Content Validation Panel */}
+            <div className="mb-6">
+              <ValidationPanel
+                content={data}
+                context={{
+                  productName: data.productName,
+                  mainKeyword: data.mainKeyword,
+                  tone: data.tone,
+                }}
+                templateId={data.templateId}
+              />
+            </div>
             {/* Export Format Selector */}
             <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-md">
               <label className="block text-base font-medium text-gray-700 mb-2">
@@ -2443,10 +2536,13 @@ export default function WizardPage() {
               >
                 <option value="static-html">Static HTML/CSS</option>
                 <option value="react-json">React component + JSON</option>
+                <option value="wordpress">WordPress Template</option>
               </select>
               <p className="mt-2 text-xs text-gray-600">
                 {exportFormat === 'static-html' 
                   ? 'Includes: index.html + styles.css + main.js'
+                  : exportFormat === 'wordpress'
+                  ? 'Includes: page template PHP + functions.php snippet + README'
                   : (() => {
                       const computedSlug = data.mainKeyword
                         ? data.mainKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')

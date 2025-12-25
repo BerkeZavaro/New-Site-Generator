@@ -3,6 +3,7 @@ import { CreatineReportProps } from '@/components/templates/CreatineReportTempla
 import { buildCreatineReportFiles } from '@/lib/export/buildCreatineReportFiles';
 import { buildCreatineReportReactFiles } from '@/lib/export/buildCreatineReportReactFiles';
 import { buildUploadedTemplateFiles } from '@/lib/export/buildUploadedTemplateFiles';
+import { buildWordPressTemplate, buildWordPressUploadedTemplate } from '@/lib/export/buildWordPressExport';
 import { buildZipFromFiles } from '@/lib/export/zip';
 import { ExportFormat } from '@/lib/export/types';
 import type { UploadedTemplate } from '@/lib/templates/uploadedTypes';
@@ -25,20 +26,26 @@ export async function POST(request: NextRequest) {
     } = body;
 
     let files;
+    const exportSlug = slug || 'funnel';
     
     // Handle uploaded templates
     if (template && slotData) {
       if (exportFormat === "react-json") {
         // React export for uploaded templates not yet implemented
         return new Response('React export for uploaded templates is not yet supported', { status: 400 });
+      } else if (exportFormat === "wordpress") {
+        files = buildWordPressUploadedTemplate(template, slotData, exportSlug);
+      } else {
+        // Default to static-html
+        files = buildUploadedTemplateFiles(template, slotData);
       }
-      files = buildUploadedTemplateFiles(template, slotData);
     } 
     // Handle CreatineReport template
     else if (props) {
       if (exportFormat === "react-json") {
-        const exportSlug = slug || 'funnel';
         files = buildCreatineReportReactFiles(props, exportSlug);
+      } else if (exportFormat === "wordpress") {
+        files = buildWordPressTemplate(props, exportSlug);
       } else {
         // Default to static-html
         files = buildCreatineReportFiles(props);
@@ -50,7 +57,7 @@ export async function POST(request: NextRequest) {
     const zipBytes = await buildZipFromFiles(files);
     const filename = slug || 'funnel';
 
-    return new Response(zipBytes, {
+    return new Response(zipBytes.buffer, {
       status: 200,
       headers: {
         'Content-Type': 'application/zip',
