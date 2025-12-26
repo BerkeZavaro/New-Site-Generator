@@ -182,3 +182,4 @@ Just add the `<SuggestButton>` and `<QualityBadge>` components to any field!
 
 Everything is ready to use! Try it out in the wizard. 🚀
 
+

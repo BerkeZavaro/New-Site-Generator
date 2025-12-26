@@ -466,8 +466,22 @@ export class ContentGenerator {
             slotErrors[field.slotId] = `Slot value is of type ${typeof slotValue}, expected string`;
           }
         } else {
-          // It's a string, trim it
-          slots[field.slotId] = slotValue.trim();
+          // It's a string, trim it and remove any HTML tags that might have been included
+          let cleanedValue = slotValue.trim();
+          
+          // Strip HTML tags if AI included them (shouldn't happen, but just in case)
+          cleanedValue = cleanedValue.replace(/<[^>]*>/g, '');
+          
+          // Decode common HTML entities
+          cleanedValue = cleanedValue
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#039;/g, "'")
+            .replace(/&nbsp;/g, ' ');
+          
+          slots[field.slotId] = cleanedValue.trim();
         }
       }
 
@@ -539,13 +553,26 @@ export class ContentGenerator {
       console.log(`📤 Regeneration Prompt for "${request.slotId}":`);
       console.log(prompt.substring(0, 300) + '...');
 
-      const content = await this.aiProvider.generateText(prompt, this.modelConfig);
+      let content = await this.aiProvider.generateText(prompt, this.modelConfig);
+      
+      // Strip HTML tags if AI included them (shouldn't happen, but just in case)
+      content = content.replace(/<[^>]*>/g, '');
+      
+      // Decode common HTML entities
+      content = content
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#039;/g, "'")
+        .replace(/&nbsp;/g, ' ')
+        .trim();
       
       console.log(`✅ Slot "${request.slotId}" Regenerated`);
       console.log(`Content: ${content.substring(0, 100)}...`);
 
       return {
-        content: content.trim(),
+        content: content,
         success: true,
       };
     } catch (error: any) {

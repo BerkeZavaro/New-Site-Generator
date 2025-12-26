@@ -130,12 +130,35 @@ export default function EditTemplatePage({ params }: { params: { id: string } })
       processedElements.add(heading);
       
       const tagName = heading.tagName.toLowerCase();
-      const idx = textElements.filter(te => te.type === "section").length;
+      const level = parseInt(heading.tagName[1]);
+      let label = "";
+      
+      // Use the same labeling system as TemplateUploadPanel
+      if (level === 1) {
+        const h1Idx = textElements.filter(te => te.type === "h1").length;
+        label = `H1 Heading ${h1Idx + 1}`;
+      } else if (level === 2) {
+        const h2Idx = textElements.filter(te => te.type === "h2").length;
+        label = `H2 Subheading ${h2Idx + 1}`;
+      } else if (level === 3) {
+        const h3Idx = textElements.filter(te => te.type === "h3").length;
+        label = `H3 Section Header ${h3Idx + 1}`;
+      } else if (level === 4) {
+        const h4Idx = textElements.filter(te => te.type === "h4").length;
+        label = `H4 Subsection ${h4Idx + 1}`;
+      } else if (level === 5) {
+        const h5Idx = textElements.filter(te => te.type === "h5").length;
+        label = `H5 Minor Header ${h5Idx + 1}`;
+      } else {
+        const h6Idx = textElements.filter(te => te.type === "h6").length;
+        label = `H6 Minor Header ${h6Idx + 1}`;
+      }
+      
       textElements.push({
         element: container,
-        type: "section",
-        label: `Section ${idx + 1}: ${getTextPreview(headingText, 50)}`,
-        index: idx
+        type: tagName, // Store the actual tag type (h1, h2, h3, etc.)
+        label: label,
+        index: textElements.length
       });
     }
 

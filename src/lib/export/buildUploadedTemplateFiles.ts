@@ -19,6 +19,7 @@ export function buildUploadedTemplateFiles(
   let bodyHtml = template.htmlBody;
 
   // Replace slot content using regex (server-side compatible)
+  // This approach preserves the original element structure, classes, IDs, and attributes
   template.slots.forEach((slot) => {
     const slotContent = slotData[slot.id] || "";
     const escapedContent = escapeHtml(slotContent);
@@ -27,43 +28,71 @@ export function buildUploadedTemplateFiles(
     // Pattern: <tag ... data-slot="slotId" ...>content</tag>
     const slotIdPattern = slot.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     
-    // Match opening tag with data-slot attribute
+    // Match opening tag with data-slot attribute - capture the FULL opening tag with all attributes
     const tagPattern = new RegExp(
-      `(<[^>]+data-slot=["']${slotIdPattern}["'][^>]*>)([\\s\\S]*?)(</[^>]+>)`,
+      `(<([^>\\s]+)[^>]*data-slot=["']${slotIdPattern}["'][^>]*>)([\\s\\S]*?)(</\\2>)`,
       'gi'
     );
     
-    bodyHtml = bodyHtml.replace(tagPattern, (match, openTag, oldContent, closeTag) => {
-      // Determine tag name from openTag
-      const tagMatch = openTag.match(/<(\w+)/);
-      const tagName = tagMatch ? tagMatch[1].toLowerCase() : '';
+    bodyHtml = bodyHtml.replace(tagPattern, (match, openTag, tagName, oldContent, closeTag) => {
+      // tagName is captured from the opening tag, closeTag matches it
+      const tagNameLower = tagName.toLowerCase();
       
-      if (slot.type === "list" || (tagName === "ul" || tagName === "ol")) {
-        // For lists, split content by newlines and create list items
+      if (slot.type === "list" || (tagNameLower === "ul" || tagNameLower === "ol")) {
+        // For lists, preserve the opening tag (with all attributes) and create list items
         const items = slotContent
           .split("\n")
           .map((line) => line.trim())
           .filter((line) => line.length > 0);
         if (items.length > 0) {
+          // Preserve the original opening tag structure (classes, IDs, styles, etc.)
           return openTag + items.map((item) => `<li>${escapeHtml(item)}</li>`).join("") + closeTag;
         }
         return openTag + closeTag;
-      } else if (slot.type === "image" && tagName === "img") {
-        // For images, update src attribute
+      } else if (slot.type === "image" && tagNameLower === "img") {
+        // For images, preserve the opening tag and only update src attribute
+        // Keep all other attributes (class, id, style, alt, etc.)
         const updatedTag = openTag.replace(
           /(src=["'])([^"']*)(["'])/i,
           `$1${escapedContent}$3`
         );
+        // Also update alt if content is provided
+        if (slotContent) {
+          return updatedTag.replace(
+            /(alt=["'])([^"']*)(["'])/i,
+            `$1${escapedContent}$3`
+          );
+        }
         return updatedTag;
-      } else if (slot.type === "url" && tagName === "a") {
-        // For links, update href attribute
+      } else if (slot.type === "url" && tagNameLower === "a") {
+        // For links, preserve the opening tag and only update href attribute
         const updatedTag = openTag.replace(
           /(href=["'])([^"']*)(["'])/i,
           `$1${escapedContent}$3`
         );
+        // Preserve the link text/content
         return updatedTag + oldContent + closeTag;
+      } else if (tagNameLower.match(/^h[1-6]$/)) {
+        // For headings (h1-h6), preserve the element and only update text content
+        // This preserves classes, IDs, inline styles, and all attributes
+        return openTag + escapedContent + closeTag;
+      } else if (tagNameLower === "p") {
+        // For paragraphs, preserve the element and only update text content
+        return openTag + escapedContent + closeTag;
+      } else if (tagNameLower === "div" || tagNameLower === "section" || tagNameLower === "article") {
+        // For content blocks (DIVs/SECTIONS), replace inner content with paragraphs
+        // Split content by double newlines to create multiple paragraphs
+        const paragraphs = slotContent.split(/\n\n+/).filter(p => p.trim());
+        if (paragraphs.length > 0) {
+          const paragraphHtml = paragraphs.map(para => `<p>${escapeHtml(para.trim())}</p>`).join("");
+          return openTag + paragraphHtml + closeTag;
+        } else {
+          // Single paragraph or no content
+          return openTag + (slotContent.trim() ? `<p>${escapedContent}</p>` : "") + closeTag;
+        }
       } else {
-        // For text content, replace inner content
+        // For other elements (span, etc.), preserve the element structure
+        // Only replace the inner content, keeping all attributes intact
         return openTag + escapedContent + closeTag;
       }
     });

@@ -195,8 +195,8 @@ Respond with ONLY the generated content. No explanations, no markdown formatting
 export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsRequest): string {
   const { coreNarrative, templateFields, userConfig } = request;
 
-  // Build field descriptions for the AI
-  const fieldDescriptions = templateFields.map(field => {
+  // Build enhanced field descriptions with structure context
+  const enhancedFieldDescriptions = templateFields.map((field, index) => {
     let desc = `- ${field.slotId} (${field.slotType}): ${field.label}`;
     if (field.description) {
       desc += ` - ${field.description}`;
@@ -207,16 +207,40 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     if (field.instructions) {
       desc += ` [Note: ${field.instructions}]`;
     }
+    
+    // Add structure context based on label - match exact tag types from original template
+    const labelLower = field.label.toLowerCase();
+    if (labelLower.startsWith('h1 heading ')) {
+      // H1 Heading 1, H1 Heading 2, etc. - these are H1 elements
+      desc += ` [STRUCTURE: This is an H1 HEADING - must be ONE LINE only, concise and attention-grabbing. Do NOT include paragraph text. Preserve the H1 tag structure.]`;
+    } else if (labelLower.startsWith('h2 subheading ')) {
+      // H2 Subheading 1, H2 Subheading 2, etc. - these are H2 elements
+      desc += ` [STRUCTURE: This is an H2 SUBHEADING - must be ONE LINE only, supporting the main heading. Do NOT include paragraph text. Preserve the H2 tag structure.]`;
+    } else if (labelLower.startsWith('h3 section header ')) {
+      // H3 Section Header 1, etc. - these are H3 elements
+      desc += ` [STRUCTURE: This is an H3 SECTION HEADER - must be ONE LINE only, descriptive of the section. Do NOT include paragraph text. Preserve the H3 tag structure.]`;
+    } else if (labelLower.startsWith('h4 subsection ') || labelLower.startsWith('h5 ') || labelLower.startsWith('h6 ')) {
+      // H4, H5, H6 elements
+      desc += ` [STRUCTURE: This is a HEADING - must be ONE LINE only. Do NOT include paragraph text. Preserve the original tag structure.]`;
+    } else if (labelLower.startsWith('paragraph ')) {
+      // Paragraph 1, Paragraph 2, etc. - these are P elements
+      desc += ` [STRUCTURE: This is a PARAGRAPH (P tag) - must be a FULL PARAGRAPH with multiple sentences. This is NOT a heading. Preserve the P tag structure.]`;
+    } else if (labelLower.startsWith('list ')) {
+      desc += ` [STRUCTURE: This is a LIST - format as one item per line]`;
+    } else if (labelLower.startsWith('image ')) {
+      desc += ` [STRUCTURE: This is an IMAGE - provide a URL or image data]`;
+    }
+    
     return desc;
   }).join('\n');
 
-  const prompt = `You are a professional copywriter. Your task is to extract and distribute content from a Core Narrative into specific template slots.
+  const prompt = `You are a professional copywriter. Your task is to extract and distribute content from a Core Narrative into specific template slots while PRESERVING THE EXACT STRUCTURE of the original template.
 
 **Core Narrative (Source of Truth):**
 ${coreNarrative}
 
-**Template Fields to Fill:**
-${fieldDescriptions}
+**Template Fields to Fill (with structure requirements):**
+${enhancedFieldDescriptions}
 
 **Target Audience:** ${userConfig.ageRange || 'all'} ${userConfig.gender || 'all'}${userConfig.country ? ` in ${userConfig.country}` : ''}${userConfig.targetStates && userConfig.targetStates.length > 0 ? ` (psychographic profile: ${userConfig.targetStates.join(', ')})` : ''}
 **Tone:** ${userConfig.tone}
@@ -227,10 +251,13 @@ ${userConfig.targetStates && userConfig.targetStates.length > 0
 
 **CRITICAL REQUIREMENTS:**
 1. Extract content from the Core Narrative for each field. Do NOT create new content that isn't in the narrative.
-2. For each field, identify the most relevant section of the narrative and adapt it appropriately.
-3. Maintain consistency - all fields should align with the same narrative thread.
-4. Respect length constraints where specified.
-5. Use the exact slot IDs provided as keys in your response.
+2. PRESERVE STRUCTURE: If a slot is labeled as "Headline" or "H1", it should be ONE LINE only. If it's "Paragraph" or "Body", it should be a full paragraph.
+3. For headings (H1, H2, H3, etc.), extract or create a SINGLE LINE that captures the essence. Do NOT include paragraph text in headings.
+4. For paragraphs, extract or adapt full paragraph content with multiple sentences.
+5. Maintain consistency - all fields should align with the same narrative thread.
+6. Respect length constraints where specified.
+7. Use the exact slot IDs provided as keys in your response.
+8. **CRITICAL: DO NOT include HTML tags in your response.** Return ONLY plain text content. The template already has the HTML structure (H1, H2, P tags). You should provide just the text that goes inside those tags. For example, return "My Heading Text" NOT "<h1>My Heading Text</h1>".
 
 **Response Format:**
 You MUST respond with ONLY valid JSON in this exact format (no markdown, no code blocks, no explanations):
@@ -240,7 +267,7 @@ You MUST respond with ONLY valid JSON in this exact format (no markdown, no code
   ...
 }
 
-Each value should be a string containing the extracted/adapted content for that slot.`;
+Each value should be a string containing ONLY plain text content (no HTML tags). Remember: Headlines = ONE LINE, Paragraphs = FULL PARAGRAPHS, NO HTML TAGS.`;
 
   return prompt;
 }
@@ -306,8 +333,9 @@ ${userConfig.targetStates && userConfig.targetStates.length > 0
 3. Maintain the same overall messaging as the Core Narrative.
 4. Ensure the content naturally incorporates the keyword "${userConfig.mainKeyword}" if relevant.
 5. The regenerated content should be compelling and appropriate for the target audience.
+6. **CRITICAL: DO NOT include HTML tags in your response.** Return ONLY plain text content. The template already has the HTML structure. You should provide just the text that goes inside the HTML tags. For example, return "My Heading Text" NOT "<h1>My Heading Text</h1>".
 
-Respond with ONLY the regenerated content. No explanations, no markdown formatting, just the content text.`;
+Respond with ONLY the regenerated content as plain text. No explanations, no markdown formatting, no HTML tags, just the content text.`;
 
   return prompt;
 }

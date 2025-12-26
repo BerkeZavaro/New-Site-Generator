@@ -54,8 +54,14 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
         elements.forEach((el) => {
           // For text/list slots, replace innerHTML or textContent
           if (slot.type === "text" || slot.type === "list") {
+            // Check if this is a heading element (h1, h2, h3, etc.)
+            if (el.tagName.match(/^H[1-6]$/)) {
+              // For headings, preserve the element and just update text content
+              // This preserves classes, IDs, inline styles, and all attributes
+              el.textContent = slotContent;
+            }
             // Check if this is a section container (div with heading inside)
-            if (el.classList.contains("template-section-group")) {
+            else if (el.classList.contains("template-section-group")) {
               // For section containers, preserve the heading and replace only content
               const heading = el.querySelector("h1, h2, h3, h4, h5, h6");
               const contentElements = Array.from(el.children).filter(
@@ -72,7 +78,9 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
                 const paragraphs = slotContent.split(/\n\n+/).filter(p => p.trim());
                 if (paragraphs.length > 0) {
                   paragraphs.forEach(para => {
-                    const p = doc.createElement("p");
+                    // Find the first paragraph element in the original to clone its structure
+                    const firstPara = contentElements.find(child => child.tagName === "P") as HTMLParagraphElement;
+                    const p = firstPara ? firstPara.cloneNode(false) as HTMLParagraphElement : doc.createElement("p");
                     p.textContent = para.trim();
                     if (heading && heading.nextSibling) {
                       el.insertBefore(p, heading.nextSibling);
@@ -81,8 +89,9 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
                     }
                   });
                 } else {
-                  // Single paragraph
-                  const p = doc.createElement("p");
+                  // Single paragraph - clone structure from original if available
+                  const firstPara = contentElements.find(child => child.tagName === "P") as HTMLParagraphElement;
+                  const p = firstPara ? firstPara.cloneNode(false) as HTMLParagraphElement : doc.createElement("p");
                   p.textContent = slotContent.trim();
                   if (heading && heading.nextSibling) {
                     el.insertBefore(p, heading.nextSibling);
@@ -92,24 +101,72 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
                 }
               }
             } else if (el.tagName === "UL" || el.tagName === "OL") {
-              // If it's a list element (ul/ol), try to parse as list items
+              // If it's a list element (ul/ol), preserve the element structure
+              // Get the first li to clone its structure if available
+              const firstLi = el.querySelector("li");
               const items = slotContent
                 .split("\n")
                 .map((line) => line.trim())
                 .filter((line) => line.length > 0);
               if (items.length > 0) {
-                el.innerHTML = items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+                // Clear existing items but preserve the ul/ol element structure
+                el.innerHTML = "";
+                items.forEach(item => {
+                  const li = firstLi ? firstLi.cloneNode(false) as HTMLLIElement : doc.createElement("li");
+                  li.textContent = item;
+                  el.appendChild(li);
+                });
+              }
+            } else if (el.tagName === "P") {
+              // For paragraph elements, preserve the element and just update content
+              // This preserves classes, IDs, inline styles, and all attributes
+              el.textContent = slotContent;
+            } else if (el.tagName === "DIV" || el.tagName === "SECTION" || el.tagName === "ARTICLE") {
+              // For content blocks (DIVs/SECTIONS with multiple paragraphs), replace inner content
+              // but preserve the container structure, classes, IDs, and styles
+              // Split content by double newlines to create paragraphs
+              if (slotContent.trim()) {
+                const paragraphs = slotContent.split(/\n\n+/).filter(p => p.trim());
+                
+                // Clear existing content but preserve the container
+                el.innerHTML = "";
+                
+                // Add each paragraph as a <p> tag
+                paragraphs.forEach(para => {
+                  const p = doc.createElement("p");
+                  p.textContent = para.trim();
+                  el.appendChild(p);
+                });
+              } else {
+                // Empty content - clear the container
+                el.innerHTML = "";
               }
             } else {
-              // For other elements, replace with the content
-              el.textContent = slotContent;
+              // For other elements (span, etc.), preserve the element structure
+              // If it has children, try to preserve them; otherwise replace text content
+              if (el.children.length > 0) {
+                // If element has children, try to preserve structure
+                // For now, just update text content of the element itself
+                // but keep children structure intact
+                const textNodes = Array.from(el.childNodes).filter(node => node.nodeType === Node.TEXT_NODE);
+                textNodes.forEach(node => node.textContent = "");
+                // Add new content as a text node
+                if (slotContent.trim()) {
+                  el.insertBefore(doc.createTextNode(slotContent), el.firstChild);
+                }
+              } else {
+                // No children, safe to replace text content
+                el.textContent = slotContent;
+              }
             }
           } else if (slot.type === "image" && el.tagName === "IMG") {
-            // For images, set src attribute
+            // For images, set src attribute (preserves all other attributes)
             (el as HTMLImageElement).src = slotContent;
-            (el as HTMLImageElement).alt = slotContent || "Image";
+            if (slotContent) {
+              (el as HTMLImageElement).alt = slotContent || "Image";
+            }
           } else if (slot.type === "url" && el.tagName === "A") {
-            // For links, set href attribute
+            // For links, set href attribute (preserves all other attributes)
             (el as HTMLAnchorElement).href = slotContent;
           }
         });
@@ -155,23 +212,29 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
         dangerouslySetInnerHTML={{
           __html: `
             /* Minimal constraints - let template CSS control layout */
+            /* Reset wrapper to not interfere with template styles */
             .uploaded-template-wrapper {
               width: 100% !important;
               box-sizing: border-box !important;
               margin: 0 !important;
               padding: 0 !important;
+              /* Reset any inherited styles that might interfere */
+              font-family: inherit !important;
+              font-size: inherit !important;
+              line-height: inherit !important;
+              color: inherit !important;
             }
-            /* Only ensure images are responsive */
+            /* Only ensure images are responsive - don't override template styles */
             .uploaded-template-wrapper img {
               max-width: 100% !important;
               height: auto !important;
+              /* Don't override other image styles */
             }
-            /* Ensure text wraps properly */
-            .uploaded-template-wrapper p,
-            .uploaded-template-wrapper div,
-            .uploaded-template-wrapper span {
+            /* Ensure text wraps properly - but don't override template typography */
+            .uploaded-template-wrapper * {
               word-wrap: break-word !important;
               overflow-wrap: break-word !important;
+              /* Don't override font-family, font-size, color, etc. - let template CSS control */
             }
           `,
         }}

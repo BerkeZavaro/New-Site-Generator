@@ -30,6 +30,7 @@ export function ImageSlotUpload({
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [fileSize, setFileSize] = useState<number | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -40,18 +41,44 @@ export function ImageSlotUpload({
 
   useEffect(() => {
     setPreview(value || null);
+    setUrlError(null); // Clear errors when value changes
+    
     if (value && (value.startsWith('http') || value.startsWith('data:') || value.startsWith('blob:'))) {
+      // Validate URL before trying to load
+      if (value.startsWith('http')) {
+        try {
+          new URL(value); // Validate URL format
+        } catch (e) {
+          setUrlError('Invalid URL format');
+          setImageDimensions(null);
+          return;
+        }
+      }
+      
       // Try to get image dimensions when value changes
       const img = new Image();
       img.onload = () => {
         setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+        setUrlError(null); // Clear error on successful load
       };
       img.onerror = () => {
         setImageDimensions(null);
+        // Only show error if it's a URL (not data/blob URLs which are handled differently)
+        if (value.startsWith('http')) {
+          setUrlError('Failed to load image from URL. The image may not exist or the URL may be incorrect.');
+        }
+        // Don't clear preview for data/blob URLs as they might be valid but just not loaded yet
+        if (value.startsWith('http')) {
+          setPreview(null);
+        }
       };
       img.src = value;
     } else {
       setImageDimensions(null);
+      if (value && value.trim() && !value.startsWith('data:') && !value.startsWith('blob:')) {
+        // Empty or invalid value
+        setUrlError('Invalid image URL or empty value');
+      }
     }
   }, [value]);
 
@@ -157,15 +184,39 @@ export function ImageSlotUpload({
 
   const handleUrlChange = (url: string) => {
     onChange(url);
+    setUrlError(null); // Clear previous errors
+    
     if (url.trim()) {
+      // Validate URL format
+      try {
+        const urlObj = new URL(url);
+        if (!urlObj.protocol.startsWith('http')) {
+          setUrlError('URL must start with http:// or https://');
+          setPreview(null);
+          setImageDimensions(null);
+          return;
+        }
+      } catch (e) {
+        // Invalid URL format, but might be a relative path or data URL
+        if (!url.startsWith('data:') && !url.startsWith('blob:') && !url.startsWith('/')) {
+          setUrlError('Invalid URL format. Please enter a valid image URL.');
+          setPreview(null);
+          setImageDimensions(null);
+          return;
+        }
+      }
+      
       setPreview(url);
       // Try to get image dimensions from URL
       const img = new Image();
       img.onload = () => {
         setImageDimensions({ width: img.width, height: img.height });
+        setUrlError(null); // Clear error on successful load
       };
       img.onerror = () => {
         setImageDimensions(null);
+        setUrlError('Failed to load image from URL. Please check the URL and try again.');
+        setPreview(null); // Clear preview on error
       };
       img.src = url;
       setFileSize(null); // URL images don't have file size
@@ -173,6 +224,7 @@ export function ImageSlotUpload({
       setPreview(null);
       setImageDimensions(null);
       setFileSize(null);
+      setUrlError(null);
     }
   };
 
@@ -391,6 +443,22 @@ export function ImageSlotUpload({
               Enter a direct URL to an image file
             </p>
           </div>
+          {urlError && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-3">
+              <p className="text-sm text-red-800">{urlError}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setUrlError(null);
+                  onChange("");
+                  setPreview(null);
+                }}
+                className="mt-2 text-xs text-red-600 hover:text-red-800 underline"
+              >
+                Clear and try again
+              </button>
+            </div>
+          )}
           {imageDimensions && (
             <p className="text-xs text-gray-500">
               Image dimensions: <span className="font-medium">{imageDimensions.width} × {imageDimensions.height}px</span>
@@ -496,8 +564,8 @@ export function ImageSlotUpload({
                   onError={() => {
                     setPreview(null);
                     setImageDimensions(null);
-                    if (uploadMode === "url") {
-                      alert("Failed to load image from URL. Please check the URL and try again.");
+                    if (uploadMode === "url" || (value && value.startsWith('http'))) {
+                      setUrlError("Failed to load image from URL. Please check the URL and try again.");
                     }
                   }}
                 />

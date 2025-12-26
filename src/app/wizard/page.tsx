@@ -8,6 +8,7 @@ import { UploadedTemplateRenderer } from '@/components/templates/UploadedTemplat
 import { ImageSlotUpload } from '@/components/templates/ImageSlotUpload';
 import { SuggestButton } from '@/components/content/SuggestButton';
 import { QualityBadge } from '@/components/content/QualityBadge';
+import { ValidationPanel } from '@/components/content/ValidationPanel';
 import { TEMPLATES, TemplateId } from '@/lib/templates/registry';
 import { loadUploadedTemplates } from '@/lib/templates/uploadedStorage';
 import type { UploadedTemplate } from '@/lib/templates/uploadedTypes';
@@ -1257,35 +1258,6 @@ export default function WizardPage() {
 
                     <div>
                       <label className="block text-base font-medium text-gray-700 mb-2">
-                        Website URL (for template extraction)
-                      </label>
-                      <input
-                        type="url"
-                        value={data.websiteUrl}
-                        onChange={(e) => updateField('websiteUrl', e.target.value)}
-                        placeholder="https://example.com"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        Optional: Provide a website URL to extract its design as a template. The system will clean and process the HTML automatically.
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="block text-base font-medium text-gray-700 mb-2">
-                        Main Product URL
-                      </label>
-                      <input
-                        type="text"
-                        value={data.productUrl}
-                        onChange={(e) => updateField('productUrl', e.target.value)}
-                        placeholder="https://example.com/product"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-base font-medium text-gray-700 mb-2">
                         Main Keyword / Topic <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -2499,18 +2471,6 @@ export default function WizardPage() {
               >
                 {isExporting ? 'Building export...' : 'Export for WebDev (ZIP)'}
               </button>
-            </div>
-            {/* Content Validation Panel */}
-            <div className="mb-6">
-              <ValidationPanel
-                content={data}
-                context={{
-                  productName: data.productName,
-                  mainKeyword: data.mainKeyword,
-                  tone: data.tone,
-                }}
-                templateId={data.templateId}
-              />
             </div>
             {/* Content Validation Panel */}
             <div className="mb-6">
