@@ -81,7 +81,7 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
                     // Find the first paragraph element in the original to clone its structure
                     const firstPara = contentElements.find(child => child.tagName === "P") as HTMLParagraphElement;
                     const p = firstPara ? firstPara.cloneNode(false) as HTMLParagraphElement : doc.createElement("p");
-                    p.textContent = para.trim();
+                    p.innerHTML = para.trim(); // Use innerHTML to support HTML formatting
                     if (heading && heading.nextSibling) {
                       el.insertBefore(p, heading.nextSibling);
                     } else {
@@ -92,7 +92,7 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
                   // Single paragraph - clone structure from original if available
                   const firstPara = contentElements.find(child => child.tagName === "P") as HTMLParagraphElement;
                   const p = firstPara ? firstPara.cloneNode(false) as HTMLParagraphElement : doc.createElement("p");
-                  p.textContent = slotContent.trim();
+                  p.innerHTML = slotContent.trim(); // Use innerHTML to support HTML formatting
                   if (heading && heading.nextSibling) {
                     el.insertBefore(p, heading.nextSibling);
                   } else {
@@ -118,9 +118,10 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
                 });
               }
             } else if (el.tagName === "P") {
-              // For paragraph elements, preserve the element and just update content
+              // For paragraph elements, preserve the element and update content
+              // Support HTML formatting (bold, italic, etc.)
               // This preserves classes, IDs, inline styles, and all attributes
-              el.textContent = slotContent;
+              el.innerHTML = slotContent;
             } else if (el.tagName === "DIV" || el.tagName === "SECTION" || el.tagName === "ARTICLE") {
               // For content blocks (DIVs/SECTIONS with multiple paragraphs), replace inner content
               // but preserve the container structure, classes, IDs, and styles
@@ -134,7 +135,7 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
                 // Add each paragraph as a <p> tag
                 paragraphs.forEach(para => {
                   const p = doc.createElement("p");
-                  p.textContent = para.trim();
+                  p.innerHTML = para.trim(); // Use innerHTML to support HTML formatting
                   el.appendChild(p);
                 });
               } else {

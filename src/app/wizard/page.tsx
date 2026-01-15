@@ -3,67 +3,37 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import CreatineReportTemplate, { CreatineReportProps } from '@/components/templates/CreatineReportTemplate';
 import { UploadedTemplateRenderer } from '@/components/templates/UploadedTemplateRenderer';
 import { ImageSlotUpload } from '@/components/templates/ImageSlotUpload';
-import { SuggestButton } from '@/components/content/SuggestButton';
-import { QualityBadge } from '@/components/content/QualityBadge';
 import { ValidationPanel } from '@/components/content/ValidationPanel';
-import { TEMPLATES, TemplateId } from '@/lib/templates/registry';
+import { TEMPLATES, TemplateId, getTemplateConfigById } from '@/lib/templates/registry';
 import { loadUploadedTemplates } from '@/lib/templates/uploadedStorage';
 import type { UploadedTemplate } from '@/lib/templates/uploadedTypes';
+import type { TemplateConfig } from '@/lib/templates/types';
 import { extractImageMetadata } from '@/lib/templates/imageExtractor';
 import { FunnelConfig } from '@/lib/funnels/types';
 import { getFunnelById, upsertFunnel } from '@/lib/funnels/storage';
 import { ExportFormat } from '@/lib/export/types';
-import { buildCreatineReportHtml } from '@/lib/export/buildStaticHtml';
 import { buildUploadedTemplateFiles } from '@/lib/export/buildUploadedTemplateFiles';
-import { getCreatineReportFields, getUploadedTemplateFields } from '@/lib/generator/templateFields';
+import { getTemplateFields } from '@/lib/generator/templateFields';
 
 interface WizardData {
-  // Step 1: Template & basics
   templateId: TemplateId;
   productName: string;
   productUrl: string;
-  websiteUrl: string; // URL to extract template from
+  websiteUrl: string;
   mainKeyword: string;
-  targetStates: string[]; // Array of US states for regional targeting (Step 1)
-  
-  // Step 2: Audience & tone
+  targetStates: string[];
   ageRange: string;
   gender: string;
-  country: string; // Always "United States"
-  region: string; // Comma-separated list of states (legacy, kept for backward compatibility)
+  country: string;
+  region: string;
   tone: string;
-  font: string; // Selected font family
-  
-  // Step 3: Core Narrative (Source of Truth)
+  font: string;
   coreNarrative: string;
-  
-  // Step 4: Content placeholders (for CreatineReport template)
-  pageHeadline: string;
-  introParagraph: string;
-  mainBenefits: string;
-  effectivenessParagraphs: string; // one per line
-  comparisonParagraphs: string; // one per line
-  reviewParagraphs: string; // one per line
-  bottomLineParagraph: string;
-  sidebarDiscoverItems: string; // one per line
-  sidebarTopItems: string; // one per line
-  ratings: {
-    customerService: string;
-    valueRating: string;
-    customerRating: string;
-    overallRating: string;
-  };
-  newsletterTitle: string;
-  newsletterDesc: string;
-  
-  // Dynamic slot data for uploaded templates (slotId -> content)
   slotData?: Record<string, string>;
 }
 
-// US States list for multi-select
 const US_STATES = [
   'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',
   'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky',
@@ -74,7 +44,6 @@ const US_STATES = [
   'West Virginia', 'Wisconsin', 'Wyoming', 'District of Columbia'
 ];
 
-// Comprehensive list of English fonts
 const FONTS = [
   // Web-safe fonts
   'Arial', 'Arial Black', 'Arial Narrow', 'Arial Rounded MT Bold',
@@ -112,57 +81,30 @@ const FONTS = [
 ].sort();
 
 const initialData: WizardData = {
-  templateId: 'creatine-report',
+  templateId: '',
   productName: '',
   productUrl: '',
   websiteUrl: '',
   mainKeyword: '',
-  targetStates: [], // Step 1: Target states for regional customization
+  targetStates: [],
   ageRange: '',
   gender: '',
-  country: 'United States', // Default to United States
-  region: '', // Comma-separated states (legacy, kept for backward compatibility)
+  country: 'United States',
+  region: '',
   tone: '',
-  font: 'Arial', // Default font
-  coreNarrative: '', // Step 3: Core Narrative
-  pageHeadline: '',
-  introParagraph: '',
-  mainBenefits: '',
-  effectivenessParagraphs: '',
-  comparisonParagraphs: '',
-  reviewParagraphs: '',
-  bottomLineParagraph: '',
-  sidebarDiscoverItems: '',
-  sidebarTopItems: '',
-  ratings: {
-    customerService: '5',
-    valueRating: '5',
-    customerRating: '5',
-    overallRating: '5',
-  },
-  newsletterTitle: 'Stay Updated',
-  newsletterDesc: 'Get the latest creatine research, product reviews, and fitness tips delivered to your inbox.',
+  font: 'Arial',
+  coreNarrative: '',
 };
 
-// Helper function to get maxLength for a field (CreatineReport template)
-function getFieldMaxLength(fieldId: string): number | undefined {
-  const fields = getCreatineReportFields();
-  const field = fields.find(f => f.slotId === fieldId);
-  return field?.maxLength;
-}
-
-// Helper function to get maxLength for uploaded template slot
-function getUploadedSlotMaxLength(slotId: string, template: UploadedTemplate): number | undefined {
-  const fields = getUploadedTemplateFields(template.slots);
+function getSlotMaxLength(slotId: string, template: TemplateConfig | null): number | undefined {
+  if (!template) return undefined;
+  const fields = getTemplateFields(template);
   const field = fields.find(f => f.slotId === slotId);
   return field?.maxLength;
 }
 
-// Character Counter Component
 function CharacterCounter({ value, maxLength }: { value: string; maxLength?: number }) {
   const currentLength = value.length;
-  
-  // If no maxLength, just show the current count
   if (!maxLength) {
     return (
       <div className="absolute bottom-2 right-2 text-xs text-gray-500">
@@ -170,11 +112,8 @@ function CharacterCounter({ value, maxLength }: { value: string; maxLength?: num
       </div>
     );
   }
-  
-  // If maxLength is set, show count/max with color coding
   const isNearLimit = currentLength > maxLength * 0.8;
   const isOverLimit = currentLength > maxLength;
-  
   return (
     <div className={`absolute bottom-2 right-2 text-xs ${
       isOverLimit ? 'text-red-600 font-semibold' : 
@@ -182,6 +121,85 @@ function CharacterCounter({ value, maxLength }: { value: string; maxLength?: num
       'text-gray-500'
     }`}>
       {currentLength}/{maxLength}
+    </div>
+  );
+}
+
+// Formatting toolbar component for text areas
+function FormattingToolbar({ 
+  textareaId,
+  value, 
+  onChange 
+}: { 
+  textareaId: string;
+  value: string;
+  onChange: (newValue: string) => void;
+}) {
+  const applyFormatting = (tag: 'strong' | 'em') => {
+    const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = value.substring(start, end);
+
+    if (selectedText) {
+      // Wrap selected text with the tag
+      const openTag = tag === 'strong' ? '<strong>' : '<em>';
+      const closeTag = tag === 'strong' ? '</strong>' : '</em>';
+      const newValue = 
+        value.substring(0, start) + 
+        openTag + selectedText + closeTag + 
+        value.substring(end);
+      
+      onChange(newValue);
+      
+      // Restore cursor position after the inserted tag
+      setTimeout(() => {
+        const newPosition = start + openTag.length + selectedText.length + closeTag.length;
+        textarea.setSelectionRange(newPosition, newPosition);
+        textarea.focus();
+      }, 0);
+    } else {
+      // No selection - insert tags at cursor position
+      const openTag = tag === 'strong' ? '<strong></strong>' : '<em></em>';
+      const newValue = 
+        value.substring(0, start) + 
+        openTag + 
+        value.substring(end);
+      
+      onChange(newValue);
+      
+      // Position cursor between the tags
+      setTimeout(() => {
+        const newPosition = start + (tag === 'strong' ? 8 : 4); // <strong> = 8 chars, <em> = 4 chars
+        textarea.setSelectionRange(newPosition, newPosition);
+        textarea.focus();
+      }, 0);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 mb-2 p-2 bg-gray-50 border border-gray-200 rounded-md">
+      <button
+        type="button"
+        onClick={() => applyFormatting('strong')}
+        className="px-3 py-1 text-sm font-bold bg-white border border-gray-300 rounded hover:bg-gray-100 transition-colors"
+        title="Bold - Select text and click, or click to insert tags"
+      >
+        <strong>B</strong>
+      </button>
+      <button
+        type="button"
+        onClick={() => applyFormatting('em')}
+        className="px-3 py-1 text-sm italic bg-white border border-gray-300 rounded hover:bg-gray-100 transition-colors"
+        title="Italic - Select text and click, or click to insert tags"
+      >
+        <em>I</em>
+      </button>
+      <span className="text-xs text-gray-500 ml-2">
+        Select text and click to format, or click to insert tags at cursor
+      </span>
     </div>
   );
 }
@@ -195,11 +213,19 @@ export default function WizardPage() {
   const [showFontDropdown, setShowFontDropdown] = useState(false);
   const fontDropdownRef = useRef<HTMLDivElement>(null);
   const fontInputRef = useRef<HTMLInputElement>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingCoreNarrative, setIsGeneratingCoreNarrative] = useState(false);
+  const [isMappingToSlots, setIsMappingToSlots] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [currentFunnelId, setCurrentFunnelId] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('static-html');
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [warningFields, setWarningFields] = useState<string[]>([]);
 
-  // Load uploaded templates
   useEffect(() => {
     setUploadedTemplates(loadUploadedTemplates());
-    // Listen for new template uploads
     const handleTemplateUploaded = () => {
       setUploadedTemplates(loadUploadedTemplates());
     };
@@ -207,12 +233,10 @@ export default function WizardPage() {
     return () => window.removeEventListener('template-uploaded', handleTemplateUploaded);
   }, []);
 
-  // Scroll to top whenever step changes (instant for better UX)
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [currentStep]);
 
-  // Close font dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -225,7 +249,6 @@ export default function WizardPage() {
         setFontSearch('');
       }
     };
-
     if (showFontDropdown) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => {
@@ -233,36 +256,21 @@ export default function WizardPage() {
       };
     }
   }, [showFontDropdown]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isGeneratingCoreNarrative, setIsGeneratingCoreNarrative] = useState(false);
-  const [isMappingToSlots, setIsMappingToSlots] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [currentFunnelId, setCurrentFunnelId] = useState<string | null>(null);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('static-html');
-  const [showWarningModal, setShowWarningModal] = useState(false);
-  const [warningFields, setWarningFields] = useState<string[]>([]);
 
-  // Get the selected template (system or uploaded)
-  const getSelectedTemplate = (): { type: 'system' | 'uploaded'; template?: UploadedTemplate } => {
-    if (data.templateId === 'creatine-report') {
-      return { type: 'system' };
-    }
+  const getSelectedTemplate = (): TemplateConfig | null => {
+    if (!data.templateId) return null;
+    const systemTemplate = getTemplateConfigById(data.templateId);
+    if (systemTemplate) return systemTemplate;
     const uploaded = uploadedTemplates.find(t => t.id === data.templateId);
-    if (uploaded) {
-      return { type: 'uploaded', template: uploaded };
-    }
-    return { type: 'system' };
+    if (uploaded) return uploaded;
+    return null;
   };
 
-  // Initialize slotData when template changes
   useEffect(() => {
     const selected = getSelectedTemplate();
-    if (selected.type === 'uploaded' && selected.template) {
-      // Initialize slotData with empty strings for all slots
+    if (selected) {
       const newSlotData: Record<string, string> = {};
-      selected.template.slots.forEach(slot => {
+      selected.slots.forEach(slot => {
         if (!data.slotData || !(slot.id in data.slotData)) {
           newSlotData[slot.id] = '';
         }
@@ -276,31 +284,20 @@ export default function WizardPage() {
     }
   }, [data.templateId, uploadedTemplates]);
 
-  // Load funnel from URL param on mount
   useEffect(() => {
     const funnelId = searchParams.get('id');
     if (funnelId && currentFunnelId === null) {
       const savedFunnel = getFunnelById(funnelId);
       if (savedFunnel) {
-        // Check if the template exists (for uploaded templates)
         let templateId = savedFunnel.templateId;
-        if (templateId !== 'creatine-report') {
-          const templateExists = uploadedTemplates.some(t => t.id === templateId);
+        const templateExists = getTemplateConfigById(templateId) || uploadedTemplates.some(t => t.id === templateId);
           if (!templateExists) {
-            // Template not found - reset to default and show warning
-            templateId = 'creatine-report';
+          templateId = '';
             setErrorMessage(
-              `⚠️ Template "${savedFunnel.templateId}" used in this saved funnel is no longer available in your browser. ` +
-              `This happens when browser storage (localStorage) is cleared or you're using a different browser/device. ` +
-              `I've automatically switched to the default "Creatine Report" template. ` +
-              `Your content is safe - you can select a different template in Step 1 if needed. ` +
-              `If you have the template file, you can re-upload it.`
-            );
-            // Clear slotData since it's for a different template
-            setTimeout(() => setErrorMessage(null), 15000); // Clear after 15 seconds
-          }
+            `⚠️ Template "${savedFunnel.templateId}" used in this saved funnel is no longer available. Please select a template in Step 1.`
+          );
+          setTimeout(() => setErrorMessage(null), 15000);
         }
-        
         setData({
           templateId: templateId as TemplateId,
           productName: savedFunnel.productName,
@@ -317,64 +314,40 @@ export default function WizardPage() {
           tone: savedFunnel.tone,
           font: savedFunnel.font || 'Arial',
           coreNarrative: savedFunnel.coreNarrative || '',
-          pageHeadline: savedFunnel.pageHeadline || '',
-          introParagraph: savedFunnel.introParagraph || '',
-          mainBenefits: savedFunnel.mainBenefits || '',
-          effectivenessParagraphs: savedFunnel.effectivenessParagraphs || '',
-          comparisonParagraphs: savedFunnel.comparisonParagraphs || '',
-          reviewParagraphs: savedFunnel.reviewParagraphs || '',
-          bottomLineParagraph: savedFunnel.bottomLineParagraph || '',
-          sidebarDiscoverItems: savedFunnel.sidebarDiscoverItems || '',
-          sidebarTopItems: savedFunnel.sidebarTopItems || '',
-          ratings: savedFunnel.ratings || {
-            customerService: '5',
-            valueRating: '5',
-            customerRating: '5',
-            overallRating: '5',
-          },
-          newsletterTitle: savedFunnel.newsletterTitle || 'Stay Updated',
-          newsletterDesc: savedFunnel.newsletterDesc || 'Get the latest creatine research, product reviews, and fitness tips delivered to your inbox.',
-          slotData: templateId === savedFunnel.templateId ? savedFunnel.slotData : undefined, // Only keep slotData if template matches
+          slotData: templateId === savedFunnel.templateId ? savedFunnel.slotData : undefined,
         });
         setCurrentFunnelId(savedFunnel.id);
       }
     }
   }, [searchParams, currentFunnelId, uploadedTemplates]);
 
-  const updateField = (field: keyof WizardData, value: string | { customerService: string; valueRating: string; customerRating: string; overallRating: string }) => {
+  const updateField = (field: keyof WizardData, value: string | string[]) => {
     setData(prev => ({ ...prev, [field]: value }));
   };
 
-  // Check for empty fields in current step (for warning only)
   const getEmptyFields = (): string[] => {
     const empty: string[] = [];
-    
     if (currentStep === 1) {
+      if (!data.templateId) empty.push('Template');
       if (!data.productName.trim()) empty.push('Product Name');
       if (!data.mainKeyword.trim()) empty.push('Main Keyword');
-      // Note: targetStates is optional, so no validation needed
     } else if (currentStep === 2) {
       if (!data.ageRange) empty.push('Age Range');
       if (!data.gender) empty.push('Gender');
       if (!data.tone) empty.push('Tone of Voice');
     } else if (currentStep === 3) {
-      // Core Narrative step - no mandatory fields, but warn if empty
       if (!data.coreNarrative.trim()) empty.push('Core Narrative');
     }
-    
     return empty;
   };
 
   const goNext = () => {
     if (currentStep < 4) {
       const emptyFields = getEmptyFields();
-      
-      // Show warning if there are empty fields, but still allow proceeding
       if (emptyFields.length > 0) {
         setWarningFields(emptyFields);
         setShowWarningModal(true);
       } else {
-        // No empty fields, proceed directly
         setCurrentStep(currentStep + 1);
       }
     }
@@ -394,26 +367,19 @@ export default function WizardPage() {
     }
   };
 
-  // Handler for generating core narrative (Step 3)
   const handleGenerateCoreNarrative = async () => {
     if (!data.productName || !data.mainKeyword) {
-      setErrorMessage('Product name and main keyword are required to generate core narrative.');
+      setErrorMessage('Product name and main keyword are required.');
       return;
     }
-
     setIsGeneratingCoreNarrative(true);
     setErrorMessage(null);
-
     try {
-      // Add timeout to prevent hanging
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
-      
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
       const response = await fetch('/api/generate-core-narrative', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
           productName: data.productName,
@@ -430,82 +396,49 @@ export default function WizardPage() {
           tone: data.tone,
         }),
       });
-      
       clearTimeout(timeoutId);
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        setErrorMessage(
-          errorData.error || errorData.details 
-            ? `${errorData.error}${errorData.details ? `: ${errorData.details}` : ''}`
-            : 'Core narrative generation failed. Please try again.'
-        );
+        setErrorMessage(errorData.error || 'Core narrative generation failed.');
         setIsGeneratingCoreNarrative(false);
         return;
       }
-
       const result = await response.json();
-      
       if (result.error) {
-        setErrorMessage(`${result.error}${result.details ? `: ${result.details}` : ''}`);
+        setErrorMessage(result.error);
         setIsGeneratingCoreNarrative(false);
         return;
       }
-      
       updateField('coreNarrative', result.coreNarrative);
       setErrorMessage(null);
-      setIsGeneratingCoreNarrative(false);
     } catch (error: any) {
       console.error('Core narrative generation error:', error);
-      
-      // Check if it's a timeout or abort error
       if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-        setErrorMessage('Request timed out. The AI generation is taking longer than expected. Please try again or check your internet connection.');
-      } else if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-        setErrorMessage('Network error. Please check your internet connection and try again.');
+        setErrorMessage('Request timed out. Please try again.');
       } else {
-        setErrorMessage(`Core narrative generation failed: ${error.message || 'Unknown error'}. Please try again.`);
+        setErrorMessage(`Core narrative generation failed: ${error.message || 'Unknown error'}.`);
       }
-      
+    } finally {
       setIsGeneratingCoreNarrative(false);
     }
   };
 
-  // Handler for mapping core narrative to slots (when moving from Step 3 to Step 4)
-  // Returns true if successful, false if failed
   const handleMapNarrativeToSlots = async (): Promise<boolean> => {
     if (!data.coreNarrative.trim()) {
-      setErrorMessage('Core narrative is required to map to slots.');
+      setErrorMessage('Core narrative is required.');
       return false;
     }
-
-    // Check if template exists (for uploaded templates)
-    if (data.templateId !== 'creatine-report') {
-      const templateExists = uploadedTemplates.some(t => t.id === data.templateId);
-      if (!templateExists) {
-        setErrorMessage(
-          `Template "${data.templateId}" is no longer available. ` +
-          `Please go back to Step 1 and select a different template, or use the default "Creatine Report" template.`
-        );
+    const selected = getSelectedTemplate();
+    if (!selected) {
+      setErrorMessage('Template not available. Please select a template in Step 1.');
         return false;
       }
-    }
-
     setIsMappingToSlots(true);
     setErrorMessage(null);
-
-    // Get template slots if it's an uploaded template
-    const selected = getSelectedTemplate();
-    const templateSlots = selected.type === 'uploaded' && selected.template 
-      ? selected.template.slots 
-      : undefined;
-
     try {
       const response = await fetch('/api/map-narrative-to-slots', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           coreNarrative: data.coreNarrative,
           templateId: data.templateId,
@@ -521,118 +454,32 @@ export default function WizardPage() {
             ? data.targetStates 
             : (data.region ? data.region.split(',').map(s => s.trim()).filter(s => s) : undefined),
           tone: data.tone,
-          templateSlots, // Send template slots for uploaded templates
+          templateSlots: selected.slots,
         }),
       });
-
       if (!response.ok) {
-        let errorMessage = 'Failed to map narrative to slots';
-        let errorDetails = '';
-        
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-          errorDetails = errorData.details || errorData.hint || '';
-        } catch (jsonError) {
-          // If JSON parsing fails, try to get the text response
-          try {
-            const errorText = await response.text();
-            errorDetails = errorText || `HTTP ${response.status}: ${response.statusText}`;
-          } catch (textError) {
-            errorDetails = `HTTP ${response.status}: ${response.statusText}`;
-          }
-        }
-        
-        // Check if it's a template not found error
-        if (errorMessage?.includes('not found') || errorDetails?.includes('not found')) {
-          setErrorMessage(
-            `⚠️ Template "${data.templateId}" is no longer available in your browser. ` +
-            `This happens when browser storage (localStorage) is cleared or you're using a different browser/device. ` +
-            `Your content is safe, but you need to select a template. ` +
-            `Please go back to Step 1 and select a different template, or use the default "Creatine Report" template. ` +
-            `If you have the template file, you can re-upload it.`
-          );
-          // Auto-switch to default template to prevent further errors
-          setData(prev => ({ ...prev, templateId: 'creatine-report' as TemplateId }));
+        const errorData = await response.json().catch(() => ({ error: 'Failed to map narrative to slots' }));
+        setErrorMessage(errorData.error || 'Failed to map narrative to slots');
           return false;
         }
-        
-        // Check if it's a rate limit error and provide helpful message
-        let displayMessage = errorDetails 
-          ? `${errorMessage}: ${errorDetails}`
-          : errorMessage;
-        
-        if (errorDetails?.includes('rate limit') || errorDetails?.includes('429') || errorMessage?.includes('rate limit')) {
-          displayMessage = `${errorMessage}\n\n⏳ Rate limit reached. The system will automatically retry with delays. Please wait...\n\nIf this persists, you may need to wait a few minutes before trying again.`;
-        }
-        
-        setErrorMessage(displayMessage);
-        return false;
-      }
-
-      let result;
-      try {
-        result = await response.json();
-        console.log('📥 API Response received:', result);
-      } catch (jsonError) {
-        console.error('Failed to parse response JSON:', jsonError);
-        setErrorMessage('Failed to parse server response. Please check the console for details.');
-        return false;
-      }
-      
+      const result = await response.json();
       if (result.error) {
-        const errorMsg = result.error;
-        const errorDetails = result.details || result.hint || '';
-        const slotErrors = result.slotErrors ? Object.keys(result.slotErrors).join(', ') : '';
-        console.error('❌ API returned error:', errorMsg, errorDetails);
-        setErrorMessage(
-          `${errorMsg}${errorDetails ? `: ${errorDetails}` : ''}${slotErrors ? ` (Slots with errors: ${slotErrors})` : ''}`
-        );
+        setErrorMessage(result.error);
         return false;
       }
-      
-      if (!result.slots || Object.keys(result.slots).length === 0) {
-        console.warn('⚠️ No slots returned from API');
-        setErrorMessage('No content was generated. Please try again or check the console for details.');
-        return false;
-      }
-      
-      // Update all slot fields with mapped content
       if (result.slots) {
-        const selected = getSelectedTemplate();
-        console.log('📦 Mapping result:', result.slots);
-        console.log('📋 Template type:', selected.type);
-        console.log('🔢 Number of slots to update:', Object.keys(result.slots).length);
-        
-        // Batch update all slots at once for better performance
-        if (selected.type === 'uploaded') {
-          // For uploaded templates, update all slots in slotData at once
           setData(prev => {
             const newSlotData = { ...prev.slotData || {} };
-            Object.keys(result.slots).forEach(slotId => {
-              if (result.slots[slotId]) {
-                newSlotData[slotId] = result.slots[slotId];
-              }
-            });
-            console.log('✅ Updated slotData:', newSlotData);
-            return {
-              ...prev,
-              slotData: newSlotData
-            };
-          });
-        } else {
-          // For CreatineReport template, update fields individually
           Object.keys(result.slots).forEach(slotId => {
             if (result.slots[slotId]) {
               let processedContent = result.slots[slotId];
-              // Add bullet points for mainBenefits list
-              if (slotId === 'mainBenefits') {
+              const slot = selected.slots.find(s => s.id === slotId);
+              if (slot && slot.type === 'list') {
                 const lines = processedContent.split('\n');
                 processedContent = lines
                   .map(line => {
                     const trimmed = line.trim();
                     if (trimmed === '') return '';
-                    // If line doesn't already have a bullet point, add one
                     if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
                       return '• ' + trimmed;
                     }
@@ -641,54 +488,36 @@ export default function WizardPage() {
                   .filter(line => line !== '')
                   .join('\n');
               }
-              updateField(slotId as keyof WizardData, processedContent);
+              newSlotData[slotId] = processedContent;
             }
           });
+          return { ...prev, slotData: newSlotData };
+          });
         }
-      } else {
-        console.warn('⚠️ No slots in result:', result);
-      }
-      
       setErrorMessage(null);
-      return true; // Success
+      return true;
     } catch (error) {
       console.error('Narrative mapping error:', error);
-      setErrorMessage('Failed to map narrative to slots. Please try again.');
+      setErrorMessage('Failed to map narrative to slots.');
       return false;
     } finally {
       setIsMappingToSlots(false);
     }
   };
 
-  // Handler for regenerating a single slot (Step 4)
   const handleRegenerateSlot = async (slotId: string, slotType: string) => {
     if (!data.coreNarrative.trim()) {
-      setErrorMessage('Core narrative is required to regenerate slots.');
+      setErrorMessage('Core narrative is required.');
       return;
     }
-
     setIsGenerating(true);
     setErrorMessage(null);
-
-    // Get maxLength for this slot
-    let maxLength: number | undefined;
     const selected = getSelectedTemplate();
-    if (selected.type === 'system') {
-      // CreatineReport template
-      maxLength = getFieldMaxLength(slotId);
-    } else if (selected.type === 'uploaded' && selected.template) {
-      // Uploaded template - get from template fields
-      const templateFields = getUploadedTemplateFields(selected.template.slots);
-      const field = templateFields.find(f => f.slotId === slotId);
-      maxLength = field?.maxLength;
-    }
-
+    const maxLength = getSlotMaxLength(slotId, selected);
     try {
       const response = await fetch('/api/regenerate-slot', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           slotId,
           slotType,
@@ -708,34 +537,24 @@ export default function WizardPage() {
           maxLength,
         }),
       });
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        setErrorMessage(
-          errorData.error || errorData.details 
-            ? `${errorData.error}${errorData.details ? `: ${errorData.details}` : ''}`
-            : 'Slot regeneration failed. Please try again.'
-        );
+        setErrorMessage(errorData.error || 'Slot regeneration failed.');
         return;
       }
-
       const result = await response.json();
-      
       if (result.error) {
-        setErrorMessage(`${result.error}${result.details ? `: ${result.details}` : ''}`);
+        setErrorMessage(result.error);
         return;
       }
-      
-      // Process content - add bullet points for list-type slots like mainBenefits
       let processedContent = result.content;
-      if (slotId === 'mainBenefits' && slotType === 'list') {
-        // Split by newlines and add bullet points to each line
+      const slot = selected?.slots.find(s => s.id === slotId);
+      if (slot && slot.type === 'list') {
         const lines = processedContent.split('\n');
         processedContent = lines
           .map(line => {
             const trimmed = line.trim();
             if (trimmed === '') return '';
-            // If line doesn't already have a bullet point, add one
             if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
               return '• ' + trimmed;
             }
@@ -744,50 +563,28 @@ export default function WizardPage() {
           .filter(line => line !== '')
           .join('\n');
       }
-      
-      // Check if this is a CreatineReport field or uploaded template slot
-      const selected = getSelectedTemplate();
-      if (selected.type === 'uploaded' && selected.template) {
-        // Update slotData for uploaded templates
         setData(prev => ({
           ...prev,
           slotData: { ...prev.slotData || {}, [slotId]: processedContent }
         }));
-      } else {
-        // Update regular field for CreatineReport template
-        updateField(slotId as keyof WizardData, processedContent);
-      }
-      
       setErrorMessage(null);
     } catch (error) {
       console.error('Slot regeneration error:', error);
-      setErrorMessage('Slot regeneration failed. Please try again.');
+      setErrorMessage('Slot regeneration failed.');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // Legacy function removed - content generation now happens via:
-  // 1. Step 3: Generate Core Narrative
-  // 2. Step 3->4: Map narrative to slots
-  // 3. Step 4: Regenerate individual slots
-
   const handleSave = () => {
     if (!data.productName || !data.mainKeyword) {
-      setSaveMessage('Product name and main keyword are required to save.');
+      setSaveMessage('Product name and main keyword are required.');
       return;
     }
-
-    const suggestedName =
-      data.pageHeadline ||
-      `${data.productName || 'Supplement'} – ${data.mainKeyword || 'Keyword'}`;
-
+    const suggestedName = `${data.productName || 'Supplement'} – ${data.mainKeyword || 'Keyword'}`;
     const now = new Date().toISOString();
     const id = currentFunnelId ?? `funnel-${Date.now()}`;
-
-    // Load existing funnel to preserve createdAt if updating
     const existingFunnel = currentFunnelId ? getFunnelById(currentFunnelId) : null;
-
     const funnel: FunnelConfig = {
       id,
       name: suggestedName,
@@ -799,87 +596,51 @@ export default function WizardPage() {
       ageRange: data.ageRange,
       gender: data.gender,
       country: data.country || undefined,
-      region: data.region || undefined, // Legacy: keep for backward compatibility
+      region: data.region || undefined,
       targetStates: data.targetStates && data.targetStates.length > 0 
         ? data.targetStates 
         : (data.region ? data.region.split(',').map(s => s.trim()).filter(s => s) : undefined),
       tone: data.tone,
       font: data.font || undefined,
       coreNarrative: data.coreNarrative || undefined,
-      coreNarrative: data.coreNarrative || undefined,
-      pageHeadline: data.pageHeadline || undefined,
-      introParagraph: data.introParagraph || undefined,
-      mainBenefits: data.mainBenefits || undefined,
-      effectivenessParagraphs: data.effectivenessParagraphs || undefined,
-      comparisonParagraphs: data.comparisonParagraphs || undefined,
-      reviewParagraphs: data.reviewParagraphs || undefined,
-      bottomLineParagraph: data.bottomLineParagraph || undefined,
-      sidebarDiscoverItems: data.sidebarDiscoverItems || undefined,
-      sidebarTopItems: data.sidebarTopItems || undefined,
-      ratings: data.ratings,
-      newsletterTitle: data.newsletterTitle || undefined,
-      newsletterDesc: data.newsletterDesc || undefined,
       slotData: data.slotData || undefined,
       createdAt: existingFunnel?.createdAt || now,
     };
-
     upsertFunnel(funnel);
     setCurrentFunnelId(id);
     setSaveMessage('Funnel saved');
-
-    // Clear message after 3 seconds
-    setTimeout(() => {
-      setSaveMessage(null);
-    }, 3000);
+    setTimeout(() => setSaveMessage(null), 3000);
   };
 
   const handleOpenPreviewInNewTab = () => {
     try {
       const selected = getSelectedTemplate();
-      let htmlContent = '';
-
-      if (selected.type === 'uploaded' && selected.template) {
-        // Generate HTML for uploaded template
-        const files = buildUploadedTemplateFiles(selected.template, data.slotData || {});
+      if (!selected) {
+        alert('Template not found. Please select a template in Step 1.');
+        return;
+      }
+      const files = buildUploadedTemplateFiles(selected, data.slotData || {});
         const htmlFile = files.find(f => f.path === 'index.html');
-        if (htmlFile) {
-          htmlContent = htmlFile.contents;
-        } else {
-          alert('Failed to generate preview HTML. Please try again.');
+      if (!htmlFile) {
+        alert('Failed to generate preview HTML.');
           return;
         }
-      } else {
-        // Generate HTML for CreatineReport template
-        const previewProps = buildPreviewProps(data);
-        htmlContent = buildCreatineReportHtml(previewProps);
-      }
-
-      // Create Blob and open in new tab
-      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const blob = new Blob([htmlFile.contents], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
-      
-      // Open in new tab - use noopener and noreferrer for security
       const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
-      
       if (!newWindow) {
-        // If popup was blocked, try alternative approach
-        alert('Popup blocked. Please allow popups for this site, or try clicking the button again.');
+        alert('Popup blocked. Please allow popups for this site.');
         URL.revokeObjectURL(url);
         return;
       }
-      
-      // Revoke URL after a longer delay to ensure the page loads
-      // The browser will keep the blob URL valid until the page is closed
       setTimeout(() => {
         try {
           URL.revokeObjectURL(url);
-        } catch (e) {
-          // Ignore errors if URL was already revoked
-        }
-      }, 10000); // 10 seconds should be enough for the page to load
+        } catch (e) {}
+      }, 10000);
     } catch (error) {
       console.error('Preview generation error:', error);
-      alert('Failed to generate preview. Please try again.');
+      alert('Failed to generate preview.');
     }
   };
 
@@ -890,40 +651,21 @@ export default function WizardPage() {
       const slug = data.mainKeyword
         ? data.mainKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
         : 'funnel';
-
-      let requestBody: any;
-      
-      if (selected.type === 'uploaded' && selected.template) {
-        // Export uploaded template
-        requestBody = {
+      const requestBody = {
           slug,
-          template: selected.template,
+        template: selected,
           slotData: data.slotData || {},
           exportFormat,
         };
-      } else {
-        // Export CreatineReport template
-        const previewProps = buildPreviewProps(data);
-        requestBody = {
-          slug,
-          props: previewProps,
-          exportFormat,
-        };
-      }
-
       const response = await fetch('/api/export', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
-
       if (!response.ok) {
         alert('Export failed. Please try again.');
         return;
       }
-
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -941,194 +683,10 @@ export default function WizardPage() {
     }
   };
 
-  const buildPreviewProps = (formState: WizardData): CreatineReportProps => {
-    // Build breadcrumb
-    const breadcrumb = `Creatine Product Buyer's Guide > ${formState.productName || 'Supplement Review'}`;
-
-    // Build page title
-    const pageTitle = formState.pageHeadline || formState.productName || 'Creatine Supplement Review';
-
-    // Build main lead
-    let mainLead = formState.introParagraph;
-    if (!mainLead || mainLead.trim() === '') {
-      const keywordText = formState.mainKeyword ? ` about ${formState.mainKeyword}` : '';
-      mainLead = `${formState.productName || 'This creatine supplement'} is a high-quality product${keywordText}. This comprehensive review examines its effectiveness, ingredients, and value for money.`;
-    }
-
-    // Build main benefits
-    let mainBenefits: string[] = [];
-    if (formState.mainBenefits && formState.mainBenefits.trim() !== '') {
-      mainBenefits = formState.mainBenefits
-        .split('\n')
-        .map(b => {
-          // Strip bullet points (•, *, -) from the beginning of each line
-          let trimmed = b.trim();
-          if (trimmed.startsWith('• ')) {
-            trimmed = trimmed.substring(2);
-          } else if (trimmed.startsWith('* ')) {
-            trimmed = trimmed.substring(2);
-          } else if (trimmed.startsWith('- ')) {
-            trimmed = trimmed.substring(2);
-          }
-          return trimmed;
-        })
-        .filter(b => b !== '');
-    }
-    if (mainBenefits.length === 0) {
-      mainBenefits = [
-        'Increases muscle strength and power output',
-        'Enhances muscle recovery after workouts',
-        'Supports muscle growth and size gains',
-        'Improves exercise performance and endurance',
-        'Helps maintain muscle mass during training'
-      ];
-    }
-
-    // Build paragraph sections - use user-provided values or generate defaults
-    const ageText = formState.ageRange ? ` for ${formState.ageRange}` : '';
-    const genderText = formState.gender && formState.gender !== 'all' ? ` ${formState.gender}` : '';
-    // Build location text - always includes country, optionally includes states
-    let locationText = '';
-    if (formState.country) {
-      locationText = ` in ${formState.country}`;
-      if (formState.region && formState.region.trim()) {
-        const states = formState.region.split(',').map(s => s.trim()).filter(s => s);
-        if (states.length > 0) {
-          if (states.length === 1) {
-            locationText = ` in ${states[0]}, ${formState.country}`;
-          } else if (states.length <= 3) {
-            locationText = ` in ${states.join(', ')}, ${formState.country}`;
-          } else {
-            locationText = ` in ${states.slice(0, 3).join(', ')}, and ${states.length - 3} more states, ${formState.country}`;
-          }
-        }
-      }
-    }
-    const toneText = formState.tone ? ` with a ${formState.tone} tone` : '';
-    const keywordText = formState.mainKeyword ? ` related to ${formState.mainKeyword}` : '';
-
-    // Effectiveness paragraphs - use user input or generate defaults
-    let effectivenessParagraphs: string[] = [];
-    if (formState.effectivenessParagraphs && formState.effectivenessParagraphs.trim() !== '') {
-      effectivenessParagraphs = formState.effectivenessParagraphs
-        .split('\n')
-        .map(p => p.trim())
-        .filter(p => p !== '');
-    }
-    if (effectivenessParagraphs.length === 0) {
-      effectivenessParagraphs = [
-        `${formState.productName || 'This creatine supplement'} contains pure creatine monohydrate, which is the most researched and proven form of creatine available. Studies consistently show that creatine monohydrate supplementation can increase muscle creatine stores by up to 40%, leading to improved performance in high-intensity activities.`,
-        `The product is designed${ageText}${genderText ? ` for ${genderText} users` : ''}${locationText}${toneText}. Each serving provides 5 grams of creatine monohydrate, which is the standard effective dose recommended by research.`,
-        `Users typically report noticeable improvements in strength and muscle fullness within 2-4 weeks of consistent use, especially when combined with proper training and nutrition.`
-      ];
-    }
-
-    // Comparison paragraphs - use user input or generate defaults
-    let comparisonParagraphs: string[] = [];
-    if (formState.comparisonParagraphs && formState.comparisonParagraphs.trim() !== '') {
-      comparisonParagraphs = formState.comparisonParagraphs
-        .split('\n')
-        .map(p => p.trim())
-        .filter(p => p !== '');
-    }
-    if (comparisonParagraphs.length === 0) {
-      comparisonParagraphs = [
-        `Compared to other creatine supplements on the market, ${formState.productName || 'this product'} offers excellent value. While some brands charge premium prices for "advanced" forms of creatine, research shows that creatine monohydrate is equally effective and often more cost-efficient.`,
-        `The product stands out for its purity and lack of unnecessary additives. Unlike some competitors that include fillers or proprietary blends, this supplement provides exactly what you need: pure creatine monohydrate${keywordText}.`,
-        `When compared to leading brands, ${formState.productName || 'this creatine supplement'} delivers similar results at a more affordable price point, making it an excellent choice for budget-conscious athletes and fitness enthusiasts.`
-      ];
-    }
-
-    // Review paragraphs - use user input or generate defaults
-    let reviewParagraphs: string[] = [];
-    if (formState.reviewParagraphs && formState.reviewParagraphs.trim() !== '') {
-      reviewParagraphs = formState.reviewParagraphs
-        .split('\n')
-        .map(p => p.trim())
-        .filter(p => p !== '');
-    }
-    if (reviewParagraphs.length === 0) {
-      reviewParagraphs = [
-        `Customer reviews consistently praise ${formState.productName || 'this product'} for its effectiveness and value. Many users report significant strength gains and improved workout performance after just a few weeks of use.`,
-        `The powder mixes easily in water or juice, with minimal clumping. Some users note a slight chalky taste, which is common with creatine supplements, but it's generally well-tolerated.`,
-        `The packaging is functional and includes a scoop for easy measuring. The product arrives well-sealed and fresh, with a long shelf life when stored properly.`
-      ];
-    }
-
-    // Bottom line - use user input or generate default
-    let bottomLineParagraph = formState.bottomLineParagraph;
-    if (!bottomLineParagraph || bottomLineParagraph.trim() === '') {
-      bottomLineParagraph = `${formState.productName || 'This creatine supplement'} is a solid choice for anyone looking to supplement with creatine monohydrate${keywordText}. It offers proven effectiveness, good value for money, and reliable quality. While it may not have the flashy marketing of premium brands, it delivers the results you need at a reasonable price. Recommended for athletes, bodybuilders, and fitness enthusiasts looking to enhance their performance and muscle gains.`;
-    }
-
-    // Sidebar items - use user input or generate defaults
-    let sidebarDiscoverItems: string[] = [];
-    if (formState.sidebarDiscoverItems && formState.sidebarDiscoverItems.trim() !== '') {
-      sidebarDiscoverItems = formState.sidebarDiscoverItems
-        .split('\n')
-        .map(item => item.trim())
-        .filter(item => item !== '');
-    }
-    if (sidebarDiscoverItems.length === 0) {
-      sidebarDiscoverItems = [
-        'How creatine monohydrate works in your body',
-        'The science behind muscle strength gains',
-        'Optimal dosing strategies for best results',
-        'Common myths about creatine debunked',
-        'How to cycle creatine effectively'
-      ];
-    }
-
-    let sidebarTopItems: string[] = [];
-    if (formState.sidebarTopItems && formState.sidebarTopItems.trim() !== '') {
-      sidebarTopItems = formState.sidebarTopItems
-        .split('\n')
-        .map(item => item.trim())
-        .filter(item => item !== '');
-    }
-    if (sidebarTopItems.length === 0) {
-      sidebarTopItems = [
-        'Purity and quality of ingredients',
-        'Dosage and serving size',
-        'Price and value for money',
-        'Mixability and taste',
-        'Customer reviews and ratings',
-        'Third-party testing and certifications'
-      ];
-    }
-
-    // Ratings - parse user input or use defaults
-    const ratings = {
-      customerService: parseFloat(formState.ratings.customerService) || 5,
-      valueRating: parseFloat(formState.ratings.valueRating) || 5,
-      customerRating: parseFloat(formState.ratings.customerRating) || 5,
-      overallRating: parseFloat(formState.ratings.overallRating) || 5,
-    };
-
-    return {
-      breadcrumb,
-      pageTitle,
-      updatedTag: 'Updated November 2025',
-      productName: formState.productName || 'Creatine Supplement',
-      productImageAlt: `Product image for ${formState.productName || 'this creatine supplement'}`,
-      mainLead,
-      mainBenefits,
-      effectivenessParagraphs,
-      comparisonParagraphs,
-      reviewParagraphs,
-      bottomLineParagraph,
-      ratings,
-      productUrl: formState.productUrl || '#',
-      sidebarDiscoverItems,
-      sidebarTopItems,
-      newsletterTitle: formState.newsletterTitle || 'Stay Updated',
-      newsletterDesc: formState.newsletterDesc || 'Get the latest creatine research, product reviews, and fitness tips delivered to your inbox.'
-    };
-  };
+  const selected = getSelectedTemplate();
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
@@ -1145,72 +703,37 @@ export default function WizardPage() {
         </div>
       </header>
 
-      {/* Main content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* Left side: Form */}
           <div className="flex-1">
-            <style dangerouslySetInnerHTML={{
-              __html: `
-                .wizard-form-container textarea {
-                  font-size: 22px !important;
-                  line-height: 1.6 !important;
-                }
-                .wizard-form-container label {
-                  font-size: 18px !important;
-                  font-weight: 500 !important;
-                }
-                /* Live Summary section font sizes - make them larger */
-                .wizard-summary-section h3 {
-                  font-size: 24px !important;
-                  font-weight: 600 !important;
-                }
-                .wizard-summary-section h4 {
-                  font-size: 20px !important;
-                  font-weight: 600 !important;
-                }
-                .wizard-summary-section .text-gray-600,
-                .wizard-summary-section .text-gray-900,
-                .wizard-summary-section span:not(.text-xs):not(.text-sm) {
-                  font-size: 18px !important;
-                }
-                .wizard-summary-section .text-sm {
-                  font-size: 16px !important;
-                }
-                .wizard-summary-section .text-xs {
-                  font-size: 14px !important;
-                }
-                .wizard-summary-section em {
-                  font-size: 18px !important;
-                }
-                /* Prevent template CSS from affecting wizard UI */
-                .preview-container {
-                  isolation: isolate !important;
-                  contain: layout style paint !important;
-                }
-                .preview-container * {
-                  box-sizing: border-box !important;
-                }
-              `
-            }} />
-            <div className="wizard-form-container bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              {/* Step 1: Template & basics */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               {currentStep === 1 && (
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900 mb-6">
                     Template & Basics
                   </h2>
-
                   <div className="space-y-6">
                     <div>
                       <label className="block text-base font-medium text-gray-700 mb-2">
                         Template <span className="text-red-500">*</span>
                       </label>
+                      {TEMPLATES.length === 0 && uploadedTemplates.length === 0 ? (
+                        <div className="border border-gray-300 rounded-md p-6 bg-gray-50">
+                          <p className="text-sm text-gray-700 mb-3">
+                            <strong>No templates available.</strong> Please upload a template to get started.
+                          </p>
+                          <Link 
+                            href="/templates" 
+                            className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+                          >
+                            Go to Templates Page →
+                          </Link>
+                        </div>
+                      ) : (
                       <select
                         value={data.templateId}
                         onChange={(e) => {
                           const newTemplateId = e.target.value as TemplateId;
-                          // Reset slotData when template changes
                           setData(prev => ({
                             ...prev,
                             templateId: newTemplateId,
@@ -1218,7 +741,10 @@ export default function WizardPage() {
                           }));
                         }}
                         className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
                       >
+                          <option value="">-- Select a template --</option>
+                          {TEMPLATES.length > 0 && (
                         <optgroup label="System Templates">
                           {TEMPLATES.map((template) => (
                             <option key={template.id} value={template.id}>
@@ -1226,6 +752,7 @@ export default function WizardPage() {
                             </option>
                           ))}
                         </optgroup>
+                          )}
                         {uploadedTemplates.length > 0 && (
                           <optgroup label="Uploaded Templates">
                             {uploadedTemplates.map((template) => (
@@ -1236,16 +763,12 @@ export default function WizardPage() {
                           </optgroup>
                         )}
                       </select>
-                      {uploadedTemplates.length === 0 && (
-                        <p className="mt-1 text-xs text-gray-500">
-                          Upload templates from the <Link href="/templates" className="text-blue-600 hover:underline">Templates page</Link>
-                        </p>
                       )}
                     </div>
 
                     <div>
                       <label className="block text-base font-medium text-gray-700 mb-2">
-                        Supplement / Product Name <span className="text-red-500">*</span>
+                        Product Name <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -1258,7 +781,7 @@ export default function WizardPage() {
 
                     <div>
                       <label className="block text-base font-medium text-gray-700 mb-2">
-                        Main Keyword / Topic <span className="text-red-500">*</span>
+                        Main Keyword <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -1272,13 +795,11 @@ export default function WizardPage() {
                 </div>
               )}
 
-              {/* Step 2: Audience & tone */}
               {currentStep === 2 && (
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900 mb-6">
                     Audience & Tone
                   </h2>
-
                   <div className="space-y-6">
                     <div>
                       <label className="block text-base font-medium text-gray-700 mb-2">
@@ -1415,7 +936,7 @@ export default function WizardPage() {
                             setShowFontDropdown(true);
                           }}
                           onFocus={() => {
-                            setFontSearch(''); // Clear search to show all fonts
+                            setFontSearch('');
                             setShowFontDropdown(true);
                           }}
                           placeholder="Search or select a font..."
@@ -1435,7 +956,6 @@ export default function WizardPage() {
                           className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-80 overflow-y-auto"
                           style={{ maxHeight: '320px' }}
                           onMouseDown={(e) => {
-                            // Prevent input blur when clicking inside dropdown
                             e.preventDefault();
                           }}
                         >
@@ -1492,19 +1012,15 @@ export default function WizardPage() {
                 </div>
               )}
 
-              {/* Step 3: Core Narrative Generation */}
               {currentStep === 3 && (
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900 mb-6">
                     Core Content Generation
                   </h2>
-                  
                   <div className="mb-6">
                     <p className="text-sm text-gray-600 mb-4">
-                      Generate a comprehensive master narrative that will serve as the "source of truth" for all page content. 
-                      This narrative will be distributed across all content slots to ensure consistency.
+                      Generate a comprehensive master narrative that will serve as the source of truth for all page content.
                     </p>
-                    
                     <button
                       onClick={handleGenerateCoreNarrative}
                       disabled={isGeneratingCoreNarrative || !data.productName || !data.mainKeyword}
@@ -1516,63 +1032,58 @@ export default function WizardPage() {
                     >
                       {isGeneratingCoreNarrative ? 'Generating Master Narrative...' : 'Generate Master Narrative'}
                     </button>
-                    
-                    {isGeneratingCoreNarrative && (
-                      <p className="text-sm text-gray-600 mt-2 text-center">
-                        Generating comprehensive narrative... This may take a moment.
-                      </p>
-                    )}
-                    
                     {errorMessage && (
                       <p className="text-sm text-red-600 mt-2">{errorMessage}</p>
                     )}
                   </div>
-
                   <div>
                     <label className="block text-base font-medium text-gray-700 mb-2">
-                      Core Narrative (Master Marketing Document)
-                      {data.coreNarrative && (
-                        <span className="ml-2 text-green-600 text-sm">✓ Generated</span>
-                      )}
+                      Core Narrative
                     </label>
-                    <div className="relative">
                       <textarea
                         value={data.coreNarrative}
                         onChange={(e) => updateField('coreNarrative', e.target.value)}
-                        placeholder="The master narrative will appear here after generation. You can edit it to adjust the overall angle before distributing to slots."
+                      placeholder="The master narrative will appear here after generation."
                         rows={20}
                         maxLength={5000}
-                        className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          data.coreNarrative ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                        }`}
-                        style={{ fontSize: '16px', lineHeight: '1.6', fontFamily: 'monospace' }}
+                      className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                       <CharacterCounter value={data.coreNarrative} maxLength={5000} />
-                    </div>
-                    {data.coreNarrative && (
-                      <p className="mt-2 text-xs text-gray-500">
-                        💡 Tip: Review and edit this narrative to ensure it captures your desired angle. 
-                        When you click "Next", this content will be automatically distributed to all page slots.
-                      </p>
-                    )}
                   </div>
                 </div>
               )}
 
-              {/* Step 4: Content placeholders */}
               {currentStep === 4 && (() => {
-                const selected = getSelectedTemplate();
-                const isCreatineReport = selected.type === 'system';
+                if (!selected) {
+                  return (
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-900 mb-6">
+                        Content Placeholders
+                      </h2>
+                      <div className="border border-gray-300 rounded-md p-6 bg-gray-50">
+                        <p className="text-sm text-gray-700 mb-3">
+                          <strong>No template selected.</strong> Please go back to Step 1 and select a template.
+                        </p>
+                        <button
+                          onClick={() => setCurrentStep(1)}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+                        >
+                          Go to Step 1
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
                 
                 return (
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900 mb-6">
                     Content Placeholders
                   </h2>
-                  {!isCreatineReport && selected.template && (
+                    {selected && (
                     <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
                       <p className="text-sm text-blue-800">
-                        <strong>Template:</strong> {selected.template.name} ({selected.template.slots.length} editable sections)
+                          <strong>Template:</strong> {selected.name} ({selected.slots.length} editable sections)
                       </p>
                     </div>
                   )}
@@ -1580,8 +1091,7 @@ export default function WizardPage() {
                   {!data.coreNarrative && (
                     <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
                       <p className="text-sm text-yellow-800">
-                        <strong>Note:</strong> No core narrative found. Go back to Step 3 to generate the master narrative first, 
-                        or use the "Map from Core" button below to manually trigger mapping.
+                          <strong>Note:</strong> No core narrative found. Go back to Step 3 to generate the master narrative first.
                       </p>
                       <button
                         onClick={handleMapNarrativeToSlots}
@@ -1597,7 +1107,6 @@ export default function WizardPage() {
                     <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
                       <p className="text-sm text-blue-800 mb-2">
                         <strong>✓ Core Narrative Available</strong> - Content slots are pre-filled from your core narrative. 
-                        Use "Regenerate" buttons to refine individual sections.
                       </p>
                     </div>
                   )}
@@ -1608,568 +1117,12 @@ export default function WizardPage() {
                     </div>
                   )}
 
-                  {/* CreatineReport template fields */}
-                  {isCreatineReport && (
+                    {selected && (
                   <div className="space-y-6">
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-base font-medium text-gray-700">
-                          Page Headline
-                          {data.pageHeadline && (
-                            <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                          )}
-                        </label>
-                        <div className="flex items-center gap-2">
-                          {data.pageHeadline && (
-                            <QualityBadge
-                              field="pageHeadline"
-                              fieldLabel="Page Headline"
-                              content={data.pageHeadline}
-                              context={{
-                                productName: data.productName,
-                                mainKeyword: data.mainKeyword,
-                                tone: data.tone,
-                              }}
-                              minLength={20}
-                              maxLength={getFieldMaxLength('pageHeadline')}
-                              required
-                            />
-                          )}
-                          {data.pageHeadline && (
-                            <SuggestButton
-                              currentContent={data.pageHeadline}
-                              fieldType="headline"
-                              fieldLabel="Page Headline"
-                              context={{
-                                productName: data.productName,
-                                mainKeyword: data.mainKeyword,
-                                tone: data.tone,
-                                ageRange: data.ageRange,
-                                gender: data.gender,
-                                targetStates: data.targetStates,
-                              }}
-                              onSuggestionSelect={(suggestion) => updateField('pageHeadline', suggestion)}
-                              disabled={isGenerating}
-                            />
-                          )}
-                          {data.coreNarrative && (
-                            <button
-                              onClick={() => handleRegenerateSlot('pageHeadline', 'headline')}
-                              disabled={isGenerating}
-                              className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                            >
-                              {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={data.pageHeadline}
-                          onChange={(e) => updateField('pageHeadline', e.target.value)}
-                          placeholder="e.g. Does Creatine Cause Bloating? Here's What Science Says"
-                          maxLength={getFieldMaxLength('pageHeadline')}
-                          className={`w-full px-4 py-2 pr-16 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            data.pageHeadline ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                          }`}
-                        />
-                        <CharacterCounter value={data.pageHeadline} maxLength={getFieldMaxLength('pageHeadline')} />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-base font-medium text-gray-700">
-                          Intro Paragraph
-                          {data.introParagraph && (
-                            <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                          )}
-                        </label>
-                        <div className="flex items-center gap-2">
-                          {data.introParagraph && (
-                            <QualityBadge
-                              field="introParagraph"
-                              fieldLabel="Intro Paragraph"
-                              content={data.introParagraph}
-                              context={{
-                                productName: data.productName,
-                                mainKeyword: data.mainKeyword,
-                                tone: data.tone,
-                              }}
-                              minLength={50}
-                              maxLength={getFieldMaxLength('introParagraph')}
-                            />
-                          )}
-                          {data.introParagraph && (
-                            <SuggestButton
-                              currentContent={data.introParagraph}
-                              fieldType="paragraph"
-                              fieldLabel="Intro Paragraph"
-                              context={{
-                                productName: data.productName,
-                                mainKeyword: data.mainKeyword,
-                                tone: data.tone,
-                                ageRange: data.ageRange,
-                                gender: data.gender,
-                                targetStates: data.targetStates,
-                              }}
-                              onSuggestionSelect={(suggestion) => updateField('introParagraph', suggestion)}
-                              disabled={isGenerating}
-                            />
-                          )}
-                          {data.coreNarrative && (
-                            <button
-                              onClick={() => handleRegenerateSlot('introParagraph', 'paragraph')}
-                              disabled={isGenerating}
-                              className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                            >
-                              {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="relative">
-                        <textarea
-                          value={data.introParagraph}
-                          onChange={(e) => updateField('introParagraph', e.target.value)}
-                          placeholder="Write a brief introduction..."
-                          rows={4}
-                          maxLength={getFieldMaxLength('introParagraph')}
-                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            data.introParagraph ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                          }`}
-                          style={{ fontSize: '22px', lineHeight: '1.6', minHeight: '100px' }}
-                        />
-                        <CharacterCounter value={data.introParagraph} maxLength={getFieldMaxLength('introParagraph')} />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-base font-medium text-gray-700">
-                          Main Benefits <span className="text-gray-500">(one per line)</span>
-                          {data.mainBenefits && (
-                            <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                          )}
-                        </label>
-                        {data.coreNarrative && (
-                          <button
-                            onClick={() => handleRegenerateSlot('mainBenefits', 'list')}
-                            disabled={isGenerating}
-                            className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                          >
-                            {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                          </button>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <textarea
-                          value={data.mainBenefits}
-                          onChange={(e) => {
-                            let value = e.target.value;
-                            // Auto-add bullet points to each line if not present
-                            const lines = value.split('\n');
-                            const processedLines = lines.map((line, index) => {
-                              const trimmed = line.trim();
-                              // Skip empty lines
-                              if (trimmed === '') return '';
-                              // If line doesn't start with bullet point, add it
-                              if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
-                                return '• ' + trimmed;
-                              }
-                              return line;
-                            });
-                            // Join lines, preserving original line breaks for empty lines
-                            const result = lines.map((line, index) => {
-                              if (line.trim() === '') return line;
-                              return processedLines[index] || line;
-                            }).join('\n');
-                            updateField('mainBenefits', result);
-                          }}
-                          onBlur={(e) => {
-                            // Ensure all non-empty lines have bullet points on blur
-                            let value = e.target.value;
-                            const lines = value.split('\n');
-                            const processedLines = lines.map((line) => {
-                              const trimmed = line.trim();
-                              if (trimmed === '') return '';
-                              if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
-                                return '• ' + trimmed;
-                              }
-                              return line;
-                            });
-                            const result = processedLines.join('\n');
-                            if (result !== value) {
-                              updateField('mainBenefits', result);
-                            }
-                          }}
-                          placeholder="• Increases muscle strength&#10;• Improves workout performance&#10;• Enhances muscle recovery"
-                          rows={6}
-                          maxLength={getFieldMaxLength('mainBenefits')}
-                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            data.mainBenefits ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                          }`}
-                          style={{ fontSize: '22px', lineHeight: '1.6' }}
-                        />
-                        <CharacterCounter value={data.mainBenefits} maxLength={getFieldMaxLength('mainBenefits')} />
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Effectiveness Section</h3>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-base font-medium text-gray-700">
-                          Effectiveness Paragraphs <span className="text-gray-500">(one per line)</span>
-                          {data.effectivenessParagraphs && (
-                            <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                          )}
-                        </label>
-                        {data.coreNarrative && (
-                          <button
-                            onClick={() => handleRegenerateSlot('effectivenessParagraphs', 'paragraph')}
-                            disabled={isGenerating}
-                            className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                          >
-                            {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                          </button>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <textarea
-                          value={data.effectivenessParagraphs}
-                          onChange={(e) => updateField('effectivenessParagraphs', e.target.value)}
-                          placeholder="First paragraph about effectiveness...&#10;Second paragraph...&#10;Third paragraph..."
-                          rows={6}
-                          maxLength={getFieldMaxLength('effectivenessParagraphs')}
-                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            data.effectivenessParagraphs ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                          }`}
-                          style={{ fontSize: '22px', lineHeight: '1.6' }}
-                        />
-                        <CharacterCounter value={data.effectivenessParagraphs} maxLength={getFieldMaxLength('effectivenessParagraphs')} />
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Comparison Section</h3>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-base font-medium text-gray-700">
-                          Comparison Paragraphs <span className="text-gray-500">(one per line)</span>
-                          {data.comparisonParagraphs && (
-                            <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                          )}
-                        </label>
-                        {data.coreNarrative && (
-                          <button
-                            onClick={() => handleRegenerateSlot('comparisonParagraphs', 'paragraph')}
-                            disabled={isGenerating}
-                            className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                          >
-                            {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                          </button>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <textarea
-                          value={data.comparisonParagraphs}
-                          onChange={(e) => updateField('comparisonParagraphs', e.target.value)}
-                          placeholder="First comparison paragraph...&#10;Second comparison paragraph...&#10;Third comparison paragraph..."
-                          rows={6}
-                          maxLength={getFieldMaxLength('comparisonParagraphs')}
-                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            data.comparisonParagraphs ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                          }`}
-                          style={{ fontSize: '22px', lineHeight: '1.6' }}
-                        />
-                        <CharacterCounter value={data.comparisonParagraphs} maxLength={getFieldMaxLength('comparisonParagraphs')} />
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Reviews Section</h3>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-base font-medium text-gray-700">
-                          Review Paragraphs <span className="text-gray-500">(one per line)</span>
-                          {data.reviewParagraphs && (
-                            <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                          )}
-                        </label>
-                        {data.coreNarrative && (
-                          <button
-                            onClick={() => handleRegenerateSlot('reviewParagraphs', 'paragraph')}
-                            disabled={isGenerating}
-                            className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                          >
-                            {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                          </button>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <textarea
-                          value={data.reviewParagraphs}
-                          onChange={(e) => updateField('reviewParagraphs', e.target.value)}
-                          placeholder="First review paragraph...&#10;Second review paragraph...&#10;Third review paragraph..."
-                          rows={6}
-                          maxLength={getFieldMaxLength('reviewParagraphs')}
-                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            data.reviewParagraphs ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                          }`}
-                          style={{ fontSize: '22px', lineHeight: '1.6' }}
-                        />
-                        <CharacterCounter value={data.reviewParagraphs} maxLength={getFieldMaxLength('reviewParagraphs')} />
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Bottom Line</h3>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-base font-medium text-gray-700">
-                          Bottom Line Paragraph
-                          {data.bottomLineParagraph && (
-                            <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                          )}
-                        </label>
-                        {data.coreNarrative && (
-                          <button
-                            onClick={() => handleRegenerateSlot('bottomLineParagraph', 'paragraph')}
-                            disabled={isGenerating}
-                            className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                          >
-                            {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                          </button>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <textarea
-                          value={data.bottomLineParagraph}
-                          onChange={(e) => updateField('bottomLineParagraph', e.target.value)}
-                          placeholder="Write a concluding paragraph..."
-                          rows={4}
-                          maxLength={getFieldMaxLength('bottomLineParagraph')}
-                          className={`w-full px-4 py-2 pb-8 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                            data.bottomLineParagraph ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                          }`}
-                          style={{ fontSize: '22px', lineHeight: '1.6' }}
-                        />
-                        <CharacterCounter value={data.bottomLineParagraph} maxLength={getFieldMaxLength('bottomLineParagraph')} />
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Sidebar Content</h3>
-                      <div className="space-y-4">
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="block text-base font-medium text-gray-700">
-                              What You'll Discover Items <span className="text-gray-500">(one per line)</span>
-                              {data.sidebarDiscoverItems && (
-                                <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                              )}
-                            </label>
-                            {data.coreNarrative && (
-                              <button
-                                onClick={() => handleRegenerateSlot('sidebarDiscoverItems', 'list')}
-                                disabled={isGenerating}
-                                className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                              >
-                                {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                              </button>
-                            )}
-                          </div>
-                          <div className="relative">
-                            <textarea
-                              value={data.sidebarDiscoverItems}
-                              onChange={(e) => updateField('sidebarDiscoverItems', e.target.value)}
-                              placeholder="How creatine monohydrate works in your body&#10;The science behind muscle strength gains&#10;Optimal dosing strategies for best results"
-                              rows={5}
-                              maxLength={getFieldMaxLength('sidebarDiscoverItems')}
-                              className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                data.sidebarDiscoverItems ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                              }`}
-                              style={{ fontSize: '22px', lineHeight: '1.6' }}
-                            />
-                            <CharacterCounter value={data.sidebarDiscoverItems} maxLength={getFieldMaxLength('sidebarDiscoverItems')} />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="block text-base font-medium text-gray-700">
-                              Top Items to Consider <span className="text-gray-500">(one per line)</span>
-                              {data.sidebarTopItems && (
-                                <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                              )}
-                            </label>
-                            {data.coreNarrative && (
-                              <button
-                                onClick={() => handleRegenerateSlot('sidebarTopItems', 'list')}
-                                disabled={isGenerating}
-                                className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                              >
-                                {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                              </button>
-                            )}
-                          </div>
-                          <div className="relative">
-                            <textarea
-                              value={data.sidebarTopItems}
-                              onChange={(e) => updateField('sidebarTopItems', e.target.value)}
-                              placeholder="Purity and quality of ingredients&#10;Dosage and serving size&#10;Price and value for money"
-                              rows={6}
-                              maxLength={getFieldMaxLength('sidebarTopItems')}
-                              className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                data.sidebarTopItems ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                              }`}
-                              style={{ fontSize: '22px', lineHeight: '1.6' }}
-                            />
-                            <CharacterCounter value={data.sidebarTopItems} maxLength={getFieldMaxLength('sidebarTopItems')} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Ratings</h3>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-base font-medium text-gray-700 mb-2">
-                            Overall Rating (1-5)
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="5"
-                            step="0.1"
-                            value={data.ratings.overallRating}
-                            onChange={(e) => updateField('ratings', { ...data.ratings, overallRating: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-base font-medium text-gray-700 mb-2">
-                            Customer Service (1-5)
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="5"
-                            step="0.1"
-                            value={data.ratings.customerService}
-                            onChange={(e) => updateField('ratings', { ...data.ratings, customerService: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-base font-medium text-gray-700 mb-2">
-                            Value Rating (1-5)
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="5"
-                            step="0.1"
-                            value={data.ratings.valueRating}
-                            onChange={(e) => updateField('ratings', { ...data.ratings, valueRating: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-base font-medium text-gray-700 mb-2">
-                            Customer Rating (1-5)
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="5"
-                            step="0.1"
-                            value={data.ratings.customerRating}
-                            onChange={(e) => updateField('ratings', { ...data.ratings, customerRating: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Newsletter Section</h3>
-                      <div className="space-y-4">
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="block text-base font-medium text-gray-700">
-                              Newsletter Title
-                              {data.newsletterTitle && (
-                                <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                              )}
-                            </label>
-                            {data.coreNarrative && (
-                              <button
-                                onClick={() => handleRegenerateSlot('newsletterTitle', 'headline')}
-                                disabled={isGenerating}
-                                className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                              >
-                                {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                              </button>
-                            )}
-                          </div>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              value={data.newsletterTitle}
-                              onChange={(e) => updateField('newsletterTitle', e.target.value)}
-                              placeholder="Stay Updated"
-                              maxLength={getFieldMaxLength('newsletterTitle')}
-                              className={`w-full px-4 py-2 pr-16 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                data.newsletterTitle ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                              }`}
-                            />
-                            <CharacterCounter value={data.newsletterTitle} maxLength={getFieldMaxLength('newsletterTitle')} />
-                          </div>
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="block text-base font-medium text-gray-700">
-                              Newsletter Description
-                              {data.newsletterDesc && (
-                                <span className="ml-2 text-green-600 text-sm">✓ Filled</span>
-                              )}
-                            </label>
-                            {data.coreNarrative && (
-                              <button
-                                onClick={() => handleRegenerateSlot('newsletterDesc', 'paragraph')}
-                                disabled={isGenerating}
-                                className="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:bg-gray-100 disabled:text-gray-400"
-                              >
-                                {isGenerating ? 'Regenerating...' : '🔄 Regenerate from Core'}
-                              </button>
-                            )}
-                          </div>
-                          <div className="relative">
-                            <textarea
-                              value={data.newsletterDesc}
-                              onChange={(e) => updateField('newsletterDesc', e.target.value)}
-                              placeholder="Get the latest creatine research, product reviews, and fitness tips delivered to your inbox."
-                              rows={3}
-                              maxLength={getFieldMaxLength('newsletterDesc')}
-                              className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                                data.newsletterDesc ? 'border-green-300 bg-green-50' : 'border-gray-300'
-                              }`}
-                              style={{ fontSize: '22px', lineHeight: '1.6' }}
-                            />
-                            <CharacterCounter value={data.newsletterDesc} maxLength={getFieldMaxLength('newsletterDesc')} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  )}
-
-                  {/* Dynamic fields for uploaded templates */}
-                  {!isCreatineReport && selected.template && (
-                    <div className="space-y-6 mt-6 pt-6 border-t border-gray-200">
                       <h3 className="text-lg font-semibold text-gray-900 mb-4">
                         Template Content Sections
                       </h3>
-                      {selected.template.slots.map((slot) => {
+                        {selected.slots.map((slot) => {
                         const slotValue = data.slotData?.[slot.id] || '';
                         const isFilled = slotValue.trim().length > 0;
                         const slotTypeMap: Record<string, string> = {
@@ -2211,13 +1164,13 @@ export default function WizardPage() {
                                   }));
                                 }}
                                 placeholderImage={
-                                  selected.template
-                                    ? extractImageMetadata(selected.template.htmlBody, slot.id)?.src
+                                    selected
+                                      ? extractImageMetadata(selected.htmlBody, slot.id)?.src
                                     : undefined
                                 }
                                 dimensions={
-                                  selected.template
-                                    ? extractImageMetadata(selected.template.htmlBody, slot.id) || undefined
+                                    selected
+                                      ? extractImageMetadata(selected.htmlBody, slot.id) || undefined
                                     : undefined
                                 }
                                 productName={data.productName}
@@ -2234,8 +1187,8 @@ export default function WizardPage() {
                                     }));
                                   }}
                                   placeholder={`Enter ${slot.label.toLowerCase()} (one per line)`}
-                                  rows={slot.type === 'list' ? 6 : 4}
-                                  maxLength={selected.template ? getUploadedSlotMaxLength(slot.id, selected.template) : undefined}
+                                    rows={6}
+                                    maxLength={getSlotMaxLength(slot.id, selected)}
                                   className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                                     isFilled ? 'border-green-300 bg-green-50' : 'border-gray-300'
                                   }`}
@@ -2243,12 +1196,23 @@ export default function WizardPage() {
                                 />
                                 <CharacterCounter 
                                   value={slotValue} 
-                                  maxLength={selected.template ? getUploadedSlotMaxLength(slot.id, selected.template) : undefined} 
+                                    maxLength={getSlotMaxLength(slot.id, selected)} 
                                 />
                               </div>
                             ) : (
                               <div className="relative">
+                                <FormattingToolbar
+                                  textareaId={`textarea-${slot.id}`}
+                                  value={slotValue}
+                                  onChange={(newValue) => {
+                                    setData(prev => ({
+                                      ...prev,
+                                      slotData: { ...prev.slotData || {}, [slot.id]: newValue }
+                                    }));
+                                  }}
+                                />
                                 <textarea
+                                  id={`textarea-${slot.id}`}
                                   value={slotValue}
                                   onChange={(e) => {
                                     setData(prev => ({
@@ -2256,9 +1220,9 @@ export default function WizardPage() {
                                       slotData: { ...prev.slotData || {}, [slot.id]: e.target.value }
                                     }));
                                   }}
-                                  placeholder={`Enter ${slot.label.toLowerCase()}`}
+                                  placeholder={`Enter ${slot.label.toLowerCase()}. Use <strong>text</strong> for bold and <em>text</em> for italic.`}
                                   rows={4}
-                                  maxLength={selected.template ? getUploadedSlotMaxLength(slot.id, selected.template) : undefined}
+                                    maxLength={getSlotMaxLength(slot.id, selected)}
                                   className={`w-full px-4 py-2 pb-8 text-base border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                                     isFilled ? 'border-green-300 bg-green-50' : 'border-gray-300'
                                   }`}
@@ -2266,7 +1230,7 @@ export default function WizardPage() {
                                 />
                                 <CharacterCounter 
                                   value={slotValue} 
-                                  maxLength={selected.template ? getUploadedSlotMaxLength(slot.id, selected.template) : undefined} 
+                                    maxLength={getSlotMaxLength(slot.id, selected)} 
                                 />
                               </div>
                             )}
@@ -2288,7 +1252,6 @@ export default function WizardPage() {
                 );
               })()}
 
-              {/* Navigation buttons */}
               <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-200">
                 <button
                   onClick={goBack}
@@ -2305,7 +1268,6 @@ export default function WizardPage() {
                 <button
                   onClick={async () => {
                     if (currentStep === 3 && data.coreNarrative.trim()) {
-                      // Step 3: Map narrative to slots before proceeding
                       const success = await handleMapNarrativeToSlots();
                       if (success) {
                         setCurrentStep(4);
@@ -2331,14 +1293,11 @@ export default function WizardPage() {
             </div>
           </div>
 
-          {/* Right side: Summary */}
           <div className="lg:w-96">
-            <div className="wizard-summary-section bg-white rounded-lg shadow-sm border border-gray-200 p-6 sticky top-8">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sticky top-8">
               <h3 className="text-2xl font-semibold text-gray-900 mb-4">
                 Live Summary
               </h3>
-
-              {/* Template & basics */}
               <div className="mb-6">
                 <h4 className="text-lg font-semibold text-gray-700 mb-3">
                   Template & Basics
@@ -2347,7 +1306,10 @@ export default function WizardPage() {
                   <div>
                     <span className="text-gray-600">Template:</span>{' '}
                     <span className="text-gray-900">
-                      {TEMPLATES.find((t) => t.id === data.templateId)?.name || 'Unknown'}
+                      {(() => {
+                        const template = getTemplateConfigById(data.templateId) || uploadedTemplates.find(t => t.id === data.templateId);
+                        return template?.name || 'Not selected';
+                      })()}
                     </span>
                   </div>
                   <div>
@@ -2357,29 +1319,13 @@ export default function WizardPage() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-gray-600">URL:</span>{' '}
-                    <span className="text-gray-900 break-all">
-                      {data.productUrl || <em className="text-gray-400">Not set yet</em>}
-                    </span>
-                  </div>
-                  <div>
                     <span className="text-gray-600">Keyword:</span>{' '}
                     <span className="text-gray-900">
                       {data.mainKeyword || <em className="text-gray-400">Not set yet</em>}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-gray-600">Target States:</span>{' '}
-                    <span className="text-gray-900">
-                      {data.targetStates && data.targetStates.length > 0 
-                        ? data.targetStates.join(', ')
-                        : <em className="text-gray-400">Not set (General US)</em>}
-                    </span>
                   </div>
                 </div>
-              </div>
-
-              {/* Audience & tone */}
               <div className="mb-6 pb-6 border-b border-gray-200">
                 <h4 className="text-lg font-semibold text-gray-700 mb-3">
                   Audience & Tone
@@ -2432,14 +1378,36 @@ export default function WizardPage() {
                   </div>
                 </div>
               </div>
-
+              {data.coreNarrative && (
+                <div className="mb-6 pb-6 border-b border-gray-200">
+                  <h4 className="text-lg font-semibold text-gray-700 mb-3">
+                    Core Narrative
+                  </h4>
+                  <p className="text-sm text-gray-600 line-clamp-4">
+                    {data.coreNarrative}
+                  </p>
+                </div>
+              )}
+              {currentStep === 4 && selected && (
+                <div className="mb-6">
+                  <h4 className="text-lg font-semibold text-gray-700 mb-3">
+                    Content Status
+                  </h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Filled Slots:</span>
+                      <span className="text-gray-900 font-medium">
+                        {Object.keys(data.slotData || {}).filter(key => data.slotData?.[key]?.trim()).length} / {selected.slots.length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Preview Section - Outside the main content container to prevent layout breaks */}
-      {/* Export and Save buttons - moved to Step 4 */}
       {currentStep === 4 && (
         <div className="w-full bg-white border-t-2 border-gray-300 py-8 mt-8">
           <div className="max-w-7xl mx-auto px-6">
@@ -2472,7 +1440,7 @@ export default function WizardPage() {
                 {isExporting ? 'Building export...' : 'Export for WebDev (ZIP)'}
               </button>
             </div>
-            {/* Content Validation Panel */}
+            {currentStep === 4 && (
             <div className="mb-6">
               <ValidationPanel
                 content={data}
@@ -2484,7 +1452,7 @@ export default function WizardPage() {
                 templateId={data.templateId}
               />
             </div>
-            {/* Export Format Selector */}
+            )}
             <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-md">
               <label className="block text-base font-medium text-gray-700 mb-2">
                 Export format
@@ -2498,18 +1466,6 @@ export default function WizardPage() {
                 <option value="react-json">React component + JSON</option>
                 <option value="wordpress">WordPress Template</option>
               </select>
-              <p className="mt-2 text-xs text-gray-600">
-                {exportFormat === 'static-html' 
-                  ? 'Includes: index.html + styles.css + main.js'
-                  : exportFormat === 'wordpress'
-                  ? 'Includes: page template PHP + functions.php snippet + README'
-                  : (() => {
-                      const computedSlug = data.mainKeyword
-                        ? data.mainKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-                        : 'funnel';
-                      return `Includes: LandingPage.tsx + ${computedSlug}.config.json + styles.css`;
-                    })()}
-              </p>
             </div>
             {saveMessage && (
               <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-green-800 text-sm">
@@ -2520,7 +1476,6 @@ export default function WizardPage() {
         </div>
       )}
 
-      {/* Warning Modal */}
       {showWarningModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
@@ -2535,9 +1490,6 @@ export default function WizardPage() {
                 <li key={index}>{field}</li>
               ))}
             </ul>
-            <p className="text-xs text-gray-500 mb-6">
-              You can continue anyway, but these fields may be required for generating content or preview.
-            </p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => {
@@ -2561,4 +1513,3 @@ export default function WizardPage() {
     </div>
   );
 }
-

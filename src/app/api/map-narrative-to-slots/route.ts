@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { createContentGenerator } from '@/lib/generator/ContentGenerator';
-import { getCreatineReportFields, getUploadedTemplateFields } from '@/lib/generator/templateFields';
+import { getTemplateFields } from '@/lib/generator/templateFields';
+import { getTemplateConfigById } from '@/lib/templates/registry';
+import type { TemplateConfig } from '@/lib/templates/types';
 import type { UserConfig } from '@/lib/generator/types';
 import type { TemplateId } from '@/lib/templates/registry';
 
@@ -78,20 +80,33 @@ export async function POST(request: NextRequest) {
       tone,
     };
 
-    // Get template field definitions
-    let templateFields;
-    if (templateId === 'creatine-report') {
-      templateFields = getCreatineReportFields();
-    } else {
-      // Uploaded template - use slots sent from client
-      if (!templateSlots || templateSlots.length === 0) {
-        return Response.json(
-          { error: `Template slots are required for uploaded template "${templateId}"` },
-          { status: 400 }
-        );
-      }
-      templateFields = getUploadedTemplateFields(templateSlots);
+    // Get template configuration (system or uploaded)
+    let template: TemplateConfig | null = null;
+    
+    // First try system templates
+    template = getTemplateConfigById(templateId);
+    
+    // If not found, try to construct from uploaded template slots
+    if (!template && templateSlots && templateSlots.length > 0) {
+      // Construct a minimal template config from uploaded slots
+      template = {
+        id: templateId,
+        name: `Template ${templateId}`,
+        htmlBody: '',
+        slots: templateSlots.map(s => ({ id: s.id, type: s.type as any, label: s.label })),
+        createdBy: 'uploaded',
+      };
     }
+    
+    if (!template) {
+      return Response.json(
+        { error: `Template "${templateId}" not found` },
+        { status: 404 }
+      );
+    }
+    
+    // Get template field definitions using unified function
+    const templateFields = getTemplateFields(template);
 
     // Map narrative to slots
     const result = await generator.mapNarrativeToSlots({

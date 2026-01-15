@@ -1,19 +1,18 @@
+/**
+ * @deprecated Use types from './types' instead.
+ * This file is kept for backward compatibility but will be removed.
+ */
 import type { TemplateId } from "./registry";
+import type { SlotType, TemplateSlot, TemplateConfig } from "./types";
 
-export type SlotType = "text" | "rich-text" | "list" | "image" | "url";
+// Re-export for backward compatibility
+export type { SlotType, TemplateSlot };
 
-export type TemplateSlot = {
-  id: string;           // e.g. "page_title"
-  type: SlotType;       // for now you can default to "text" unless guessed
-  label: string;        // human label, e.g. "Page title"
-};
-
-export type UploadedTemplate = {
-  id: TemplateId;       // e.g. "uploaded-creatine-v1"
-  name: string;
-  description?: string;
-  htmlBody: string;     // innerHTML from <body>
-  css?: string;         // contents of <style> from <head>, if any
-  slots: TemplateSlot[];
-  createdAt: string;    // ISO date
+/**
+ * UploadedTemplate is now just an alias for TemplateConfig with required createdAt.
+ * All templates (system and uploaded) should use TemplateConfig.
+ */
+export type UploadedTemplate = TemplateConfig & {
+  id: TemplateId;
+  createdAt: string;    // Required for uploaded templates
 };
