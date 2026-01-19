@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { UploadedTemplateRenderer } from '@/components/templates/UploadedTemplateRenderer';
@@ -204,7 +204,7 @@ function FormattingToolbar({
   );
 }
 
-export default function WizardPage() {
+function WizardPageContent() {
   const searchParams = useSearchParams();
   const [currentStep, setCurrentStep] = useState(1);
   const [data, setData] = useState<WizardData>(initialData);
@@ -477,7 +477,7 @@ export default function WizardPage() {
               if (slot && slot.type === 'list') {
                 const lines = processedContent.split('\n');
                 processedContent = lines
-                  .map(line => {
+                  .map((line: string) => {
                     const trimmed = line.trim();
                     if (trimmed === '') return '';
                     if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
@@ -485,7 +485,7 @@ export default function WizardPage() {
                     }
                     return trimmed;
                   })
-                  .filter(line => line !== '')
+                  .filter((line: string) => line !== '')
                   .join('\n');
               }
               newSlotData[slotId] = processedContent;
@@ -552,7 +552,7 @@ export default function WizardPage() {
       if (slot && slot.type === 'list') {
         const lines = processedContent.split('\n');
         processedContent = lines
-          .map(line => {
+          .map((line: string) => {
             const trimmed = line.trim();
             if (trimmed === '') return '';
             if (!trimmed.startsWith('• ') && !trimmed.startsWith('* ') && !trimmed.startsWith('- ')) {
@@ -560,7 +560,7 @@ export default function WizardPage() {
             }
             return trimmed;
           })
-          .filter(line => line !== '')
+          .filter((line: string) => line !== '')
           .join('\n');
       }
         setData(prev => ({
@@ -619,7 +619,12 @@ export default function WizardPage() {
         alert('Template not found. Please select a template in Step 1.');
         return;
       }
-      const files = buildUploadedTemplateFiles(selected, data.slotData || {});
+      // Only uploaded templates can be previewed this way
+      if (!selected.createdAt || !uploadedTemplates.find(t => t.id === selected.id)) {
+        alert('Preview is only available for uploaded templates.');
+        return;
+      }
+      const files = buildUploadedTemplateFiles(selected as UploadedTemplate, data.slotData || {});
         const htmlFile = files.find(f => f.path === 'index.html');
       if (!htmlFile) {
         alert('Failed to generate preview HTML.');
@@ -998,7 +1003,7 @@ export default function WizardPage() {
                               fontSearch === '' || font.toLowerCase().includes(fontSearch.toLowerCase())
                             ).length === 0 && (
                               <div className="px-4 py-2 text-gray-500 text-sm">
-                                No fonts found matching "{fontSearch}"
+                                No fonts found matching &quot;{fontSearch}&quot;
                               </div>
                             )}
                           </div>
@@ -1511,5 +1516,13 @@ export default function WizardPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function WizardPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>}>
+      <WizardPageContent />
+    </Suspense>
   );
 }

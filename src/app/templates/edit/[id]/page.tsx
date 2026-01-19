@@ -226,7 +226,7 @@ export default function EditTemplatePage({ params }: { params: { id: string } })
       
       const childCount = el.children.length;
       const hasDirectText = Array.from(el.childNodes).some(
-        node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim().length > 0
+        node => node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent.trim().length > 0
       );
       
       let containsProcessed = false;
@@ -442,7 +442,7 @@ export default function EditTemplatePage({ params }: { params: { id: string } })
                   <span className="font-medium text-gray-900">{slot.label}</span>
                   <span className="text-xs text-gray-500">({slot.type})</span>
                   <code className="ml-auto text-xs bg-white px-2 py-1 rounded border border-gray-300">
-                    data-slot="{slot.id}"
+                    data-slot=&quot;{slot.id}&quot;
                   </code>
                 </li>
               ))}

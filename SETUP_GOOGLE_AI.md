@@ -14,10 +14,11 @@ npm install @google/generative-ai --legacy-peer-deps
 
 1. In the project root folder (same folder as `package.json`), create a file named `.env.local`
 2. Make sure the filename starts with a dot: `.env.local` (not `env.local`)
-3. Add this line to the file (replace with your actual API key):
+3. Add these lines to the file (replace with your actual API key):
 
 ```
 GOOGLE_AI_API_KEY=AIzaSyBQ8OlRfXoEjo_kcM_JkyRkFC6ADnA0xYk
+PORT=3000  # Optional: Set custom port (default: 3000)
 ```
 
 **Important:**

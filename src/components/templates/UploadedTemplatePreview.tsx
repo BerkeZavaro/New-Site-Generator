@@ -59,7 +59,7 @@ export function UploadedTemplatePreview({ template }: UploadedTemplatePreviewPro
         {template.slots.length === 0 && (
           <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
             <p className="text-sm text-yellow-800">
-              <strong>No editable slots detected.</strong> To make sections editable, add <code className="px-1 py-0.5 bg-yellow-100 rounded">data-slot="section-name"</code> attributes to elements in the HTML.
+              <strong>No editable slots detected.</strong> To make sections editable, add <code className="px-1 py-0.5 bg-yellow-100 rounded">data-slot=&quot;section-name&quot;</code> attributes to elements in the HTML.
             </p>
           </div>
         )}

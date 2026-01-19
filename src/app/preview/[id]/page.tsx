@@ -137,8 +137,9 @@ export default function EnhancedPreviewPage() {
     if (funnel) {
       const updated = { ...funnel };
       // Update field if it exists in funnel config, otherwise update slotData
-      if (fieldId in updated && typeof (updated as Record<string, unknown>)[fieldId] === 'string') {
-        (updated as Record<string, string>)[fieldId] = value;
+      const fieldValue = (updated as Record<string, unknown>)[fieldId];
+      if (fieldId in updated && typeof fieldValue === 'string') {
+        (updated as Record<string, unknown>)[fieldId] = value;
       } else if (updated.slotData) {
         updated.slotData[fieldId] = value;
       }

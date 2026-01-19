@@ -17,16 +17,17 @@ npm install
 
 ### Environment Setup
 
-1. Copy the `env.template` file and rename it to `.env.local`:
+1. Copy the `env.example` file and rename it to `.env.local`:
    ```bash
-   cp env.template .env.local
+   cp env.example .env.local
    ```
 
 2. Get your Google AI API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
 
-3. Open `.env.local` and replace `your-api-key-here` with your actual API key:
+3. Open `.env.local` and configure your settings:
    ```
    GOOGLE_AI_API_KEY=your-actual-key-here
+   PORT=3000  # Optional: Set custom port (default: 3000)
    ```
 
 4. Save the file and restart your dev server
@@ -39,7 +40,7 @@ Run the development server:
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+Open [http://localhost:3000](http://localhost:3000) (or your custom port if set in `.env.local`) in your browser to see the application.
 
 ### Build
 
@@ -56,6 +57,8 @@ Run the production server:
 ```bash
 npm start
 ```
+
+The server will use the port specified in the `PORT` environment variable (default: 3000).
 
 ## Project Structure
 

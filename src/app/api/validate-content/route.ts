@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
     // 4. AI-powered quality checks (if we have enough content)
     if (content.pageHeadline && content.introParagraph && GOOGLE_AI_API_KEY) {
       try {
-        const aiProvider = new GoogleGeminiProvider(GOOGLE_AI_API_KEY);
+        const aiProvider = new GoogleGeminiProvider();
         
         const prompt = `You are a content quality validator for supplement marketing funnels.
 
@@ -202,7 +202,8 @@ Analyze the following content and provide quality scores and feedback.
 Provide ONLY valid JSON, no markdown.`;
 
         const aiResponse = await aiProvider.generateText(prompt, {
-          model: 'gemini-3-pro-preview',
+          modelName: 'gemini-3-pro-preview',
+          apiKey: GOOGLE_AI_API_KEY!,
           temperature: 0.3,
           maxTokens: 500,
         });

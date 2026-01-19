@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     let template: TemplateConfig | null = null;
     
     // First try system templates
-    template = getTemplateConfigById(templateId);
+    template = getTemplateConfigById(templateId) ?? null;
     
     // If not found, try to construct from uploaded template slots
     if (!template && templateSlots && templateSlots.length > 0) {

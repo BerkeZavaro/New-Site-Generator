@@ -57,7 +57,8 @@ export async function POST(request: NextRequest) {
     const zipBytes = await buildZipFromFiles(files);
     const filename = slug || 'funnel';
 
-    return new Response(zipBytes.buffer, {
+    // Type assertion to satisfy TypeScript strict checking
+    return new Response(zipBytes.buffer as ArrayBuffer, {
       status: 200,
       headers: {
         'Content-Type': 'application/zip',

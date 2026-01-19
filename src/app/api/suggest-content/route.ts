@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const aiProvider = new GoogleGeminiProvider(GOOGLE_AI_API_KEY);
+    const aiProvider = new GoogleGeminiProvider();
 
     // Build context-aware prompt for suggestions
     const audienceContext = context.ageRange || context.gender
@@ -92,7 +92,8 @@ ${fieldType === 'list' ? '6. Make each item clear and impactful' : ''}
 Provide ONLY valid JSON, no additional text or markdown formatting.`;
 
     const response = await aiProvider.generateText(prompt, {
-      model: 'gemini-3-pro-preview',
+      modelName: 'gemini-3-pro-preview',
+      apiKey: GOOGLE_AI_API_KEY!,
       temperature: 0.7,
       maxTokens: 1000,
     });
