@@ -370,11 +370,29 @@ export class ContentGenerator {
     request: MapNarrativeToSlotsRequest
   ): Promise<MapNarrativeToSlotsResponse> {
     try {
+      // Validate template fields
+      if (!request.templateFields || !Array.isArray(request.templateFields) || request.templateFields.length === 0) {
+        throw new Error('No template fields provided or template fields array is empty');
+      }
+      
+      // Filter out any undefined/null fields
+      const validFields = request.templateFields.filter(
+        (f): f is NonNullable<typeof f> => f != null && f.slotId != null
+      );
+      
+      if (validFields.length === 0) {
+        throw new Error('No valid template fields found after filtering');
+      }
+      
       console.log('📝 Mapping Core Narrative to Template Slots...');
-      console.log(`Number of slots: ${request.templateFields.length}`);
-      console.log(`Slot IDs: ${request.templateFields.map(f => f.slotId).join(', ')}`);
+      console.log(`Number of slots: ${validFields.length}`);
+      console.log(`Slot IDs: ${validFields.map(f => f.slotId).join(', ')}`);
 
-      const prompt = buildMapNarrativeToSlotsPrompt(request);
+      // Use validFields for the prompt and processing
+      const prompt = buildMapNarrativeToSlotsPrompt({
+        ...request,
+        templateFields: validFields,
+      });
       
       console.log('='.repeat(80));
       console.log('📤 Mapping Prompt:');
@@ -434,7 +452,8 @@ export class ContentGenerator {
       const slotErrors: Record<string, string> = {};
       const slots: Record<string, string> = {};
       
-      for (const field of request.templateFields) {
+      // Use validFields instead of request.templateFields
+      for (const field of validFields) {
         const slotValue = parsed[field.slotId];
         
         if (slotValue === undefined || slotValue === null) {

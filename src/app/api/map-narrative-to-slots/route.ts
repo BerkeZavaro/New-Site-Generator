@@ -93,11 +93,27 @@ export async function POST(request: NextRequest) {
     // If not found, try to construct from uploaded template slots
     if (!template && templateSlots && templateSlots.length > 0) {
       // Construct a minimal template config from uploaded slots
+      // Filter out any undefined/null slots
+      const validSlots = templateSlots
+        .filter((s): s is NonNullable<typeof s> => s != null && s.id != null && s.type != null)
+        .map(s => ({ 
+          id: s.id, 
+          type: s.type as any, 
+          label: s.label || s.id 
+        }));
+      
+      if (validSlots.length === 0) {
+        return Response.json(
+          { error: 'No valid template slots provided' },
+          { status: 400 }
+        );
+      }
+      
       template = {
         id: templateId,
         name: `Template ${templateId}`,
         htmlBody: '',
-        slots: templateSlots.map(s => ({ id: s.id, type: s.type as any, label: s.label })),
+        slots: validSlots,
         createdBy: 'uploaded',
       };
     }

@@ -18,8 +18,17 @@ import type { TemplateConfig } from '@/lib/templates/types';
  * @returns Array of field definitions for AI generation
  */
 export function getTemplateFields(template: TemplateConfig): TemplateFieldDefinition[] {
-  return template.slots.map(slot => {
-    const slotType = mapSlotType(slot.type);
+  // Validate template and slots
+  if (!template || !template.slots) {
+    console.warn('⚠️ Template or slots is missing:', { template: !!template, slots: !!template?.slots });
+    return [];
+  }
+  
+  // Filter out any undefined/null slots and map to field definitions
+  return template.slots
+    .filter((slot): slot is NonNullable<typeof slot> => slot != null && slot.id != null)
+    .map(slot => {
+      const slotType = mapSlotType(slot.type || 'text');
     
     // Assign default maxLength based on slot type
     let maxLength: number | undefined;
