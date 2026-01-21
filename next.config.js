@@ -1,11 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Ensure @google/generative-ai is not externalized for serverless functions
-  // This tells Next.js to bundle it instead of treating it as an external dependency
-  experimental: {
-    serverComponentsExternalPackages: [],
-  },
+  // serverExternalPackages: List packages that should not be bundled in Server Components
+  // Next.js 16 automatically excludes many packages (like @prisma/client, sharp, etc.)
+  // Add packages here only if they need native Node.js require() and aren't auto-excluded
+  // serverExternalPackages: [],
 }
 
 module.exports = nextConfig

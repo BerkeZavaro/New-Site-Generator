@@ -272,27 +272,28 @@ ${userConfig.targetStates && userConfig.targetStates.length > 0
   ? `\n**Psychographic Targeting:** Adapt tone, metaphors, and priorities to match the cultural mindset and values typical of ${userConfig.targetStates.length === 1 ? userConfig.targetStates[0] : userConfig.targetStates.join(', ')}. DO NOT mention city names, landmarks, or state names. Focus on values and mindset, not geography.`
   : ''}
 
-**CRITICAL REQUIREMENTS:**
-1. **YOU MUST INCLUDE ALL ${validFields.length} SLOTS IN YOUR RESPONSE.** Every slot ID listed above must have a value in your JSON response. Do NOT skip any slots, especially lists or content blocks.
+**CRITICAL REQUIREMENTS - READ CAREFULLY:**
+1. **YOU MUST INCLUDE ALL ${validFields.length} SLOTS IN YOUR RESPONSE - NO EXCEPTIONS.** Every single slot ID listed above MUST appear as a key in your JSON response. Missing even ONE slot will cause the system to fail. Count your keys before responding - you must have exactly ${validFields.length} keys.
 2. Extract content from the Core Narrative for each field. Do NOT create new content that isn't in the narrative.
 3. PRESERVE STRUCTURE: If a slot is labeled as "Headline" or "H1", it should be ONE LINE only. If it's "Paragraph" or "Body", it should be a full paragraph.
 4. For headings (H1, H2, H3, etc.), extract or create a SINGLE LINE that captures the essence. Do NOT include paragraph text in headings.
 5. For paragraphs, extract or adapt full paragraph content with multiple sentences.
-6. **For lists (type: list, labels like "List 1", "UL List 1", "OL List 1"):** 
+6. **FOR LISTS (type: list, slot IDs containing "list"):** 
+   - **THIS IS CRITICAL - LIST SLOTS ARE OFTEN MISSED BUT ARE REQUIRED**
    - Extract 3-8 key points from the narrative
-   - Format as one item per line (each line is a bullet point)
+   - Format as one item per line (each line is a bullet point, separated by newlines)
    - Each line should be a complete sentence or phrase
-   - Example format:
-     "Key benefit 1 from narrative
-     Key benefit 2 from narrative
-     Key benefit 3 from narrative"
+   - Example format (note the newlines between items):
+     "Key benefit 1 from narrative\nKey benefit 2 from narrative\nKey benefit 3 from narrative"
    - If the narrative doesn't have enough list items, extract and adapt related points from the narrative
-   - **DO NOT skip list slots - they are required**
+   - **DO NOT SKIP LIST SLOTS - THEY ARE MANDATORY AND WILL CAUSE ERRORS IF MISSING**
+   - Look for ALL slots with "list" in their ID or type - include every single one
 7. **For content blocks:** Extract the main content from the narrative that fits that section. This can be multiple sentences or paragraphs combined. **DO NOT skip content blocks - they are required**
 8. Maintain consistency - all fields should align with the same narrative thread.
 9. Respect length constraints where specified.
 10. Use the exact slot IDs provided as keys in your response. **DO NOT use different slot IDs or skip any slots.**
 11. **CRITICAL: DO NOT include HTML tags in your response.** Return ONLY plain text content. The template already has the HTML structure (H1, H2, P, UL, OL tags). You should provide just the text that goes inside those tags. For example, return "My Heading Text" NOT "<h1>My Heading Text</h1>".
+12. **VERIFICATION STEP: Before submitting, count the number of keys in your JSON. It MUST equal ${validFields.length}. If it doesn't, you're missing slots - go back and add them.**
 
 **Response Format:**
 You MUST respond with ONLY valid JSON in this exact format (no markdown, no code blocks, no explanations). **INCLUDE ALL ${validFields.length} SLOTS - DO NOT SKIP ANY:**
@@ -312,15 +313,23 @@ ${validFields.length > 0 ? `  "${validFields[0].slotId}": "extracted content for
 ${validFields.map((f, i) => {
   const isList = f.slotType === 'list';
   const isContentBlock = f.label.toLowerCase().includes('content block');
-  const marker = (isList || isContentBlock) ? ' ⚠️ REQUIRED' : '';
+  const marker = (isList || isContentBlock) ? ' ⚠️ MANDATORY - DO NOT SKIP' : '';
   return `${i + 1}. "${f.slotId}" (${f.slotType}): ${f.label}${marker}`;
 }).join('\n')}
 
-**BEFORE SUBMITTING YOUR RESPONSE:**
-1. Verify your JSON has exactly ${validFields.length} keys
-2. Check that every slot ID listed above appears in your JSON
-3. Pay special attention to list slots and content blocks - they are often missed but are REQUIRED
-4. If you're missing any slots, go back and add them - DO NOT submit incomplete responses
+**COMPLETE LIST OF REQUIRED SLOT IDs (copy these exactly into your JSON):**
+${validFields.map(f => `"${f.slotId}"`).join(', ')}
+
+**REMINDER: Your JSON response must contain ALL ${validFields.length} of these slot IDs as keys. Missing any slot will cause an error.**
+
+**BEFORE SUBMITTING YOUR RESPONSE - MANDATORY CHECKLIST:**
+1. Count the keys in your JSON response - you MUST have exactly ${validFields.length} keys (no more, no less)
+2. Verify that EVERY slot ID from the "REQUIRED SLOT IDs" list above appears as a key in your JSON
+3. **SPECIAL ATTENTION: Check for ALL list slots** - look for any slot ID containing "list" (like "section_list_0", "section_list_1", etc.) and ensure they are ALL included
+4. **SPECIAL ATTENTION: Check for ALL content blocks** - ensure all content block slots are included
+5. If you find ANY missing slots, STOP and add them before submitting - DO NOT submit incomplete responses
+6. Double-check that your JSON is valid and can be parsed - test it mentally or write it out to verify
+7. **FINAL CHECK: Your JSON must have ${validFields.length} keys. Count them now before submitting.**
 
 Each value should be a string containing ONLY plain text content (no HTML tags). 
 - Headlines = ONE LINE

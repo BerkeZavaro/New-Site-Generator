@@ -81,10 +81,11 @@ The server will use the port specified in the `PORT` environment variable (defau
 
 ## Tech Stack
 
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 16.1.4 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
-- **Linting**: ESLint (Next.js config)
+- **Linting**: ESLint 9 (Next.js config)
+- **React**: 19.2.3
 
 ## Features (Planned)
 

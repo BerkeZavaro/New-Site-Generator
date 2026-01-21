@@ -57,141 +57,116 @@ export class GoogleGeminiProvider implements AIModelProvider {
     
     const genAI = new GoogleGenerativeAI(config.apiKey);
     
-    // Use only gemini-2.0-flash model
-    const modelNames = [
-      config.modelName || 'gemini-2.0-flash',
-      'gemini-2.0-flash', // Only fallback to gemini-2.0-flash
-    ];
-
+    // FORCE use of ONLY gemini-2.0-flash - no fallbacks, no other models
+    const modelName = 'gemini-2.0-flash';
+    
     let lastError: any = null;
     
     // Add timeout wrapper (240 seconds = 4 minutes, leaving buffer for Vercel's 5min limit)
     const timeoutMs = 240000;
     
-    for (const modelName of modelNames) {
-      // No retries - try each model once to avoid timeout
-      try {
-        const model = genAI.getGenerativeModel({ 
-          model: modelName,
-          generationConfig: {
-            temperature: config.temperature ?? 0.7,
-            maxOutputTokens: config.maxTokens,
-          },
-        });
+      // Try only gemini-2.0-flash - single attempt, no fallbacks
+    try {
+      const model = genAI.getGenerativeModel({ 
+        model: modelName,
+        generationConfig: {
+          temperature: config.temperature ?? 0.7,
+          maxOutputTokens: config.maxTokens,
+        },
+      });
+      
+      // Wrap the API call in a timeout promise
+      const generatePromise = (async () => {
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return response.text();
+      })();
+      
+      const timeoutPromise = new Promise<string>((_, reject) => {
+        setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs / 1000}s`)), timeoutMs);
+      });
+      
+      const text = await Promise.race([generatePromise, timeoutPromise]);
+      
+      console.log(`✅ Successfully generated content using model: ${modelName}`);
+      return text;
+    } catch (error: any) {
+      lastError = error;
+      
+      // If it's a timeout, throw immediately
+      if (error.message?.includes('timeout') || error.message?.includes('Timeout')) {
+        console.log(`⏱️ Timeout with ${modelName}, aborting...`);
+        throw new Error(`Request timed out after ${timeoutMs / 1000}s. The AI generation is taking too long.`);
+      }
+      
+      // If it's a rate limit error, wait and retry once with exponential backoff
+      if (error.message?.includes('429') || 
+          error.message?.includes('Too Many Requests') ||
+          error.message?.includes('rate limit') ||
+          error.message?.includes('quota') ||
+          error.status === 429 ||
+          error.code === 429 ||
+          error.statusCode === 429) {
+        console.log(`⚠️ Rate limit hit for ${modelName}, waiting before retry...`);
         
-        // Wrap the API call in a timeout promise
-        const generatePromise = (async () => {
-          const result = await model.generateContent(prompt);
-          const response = await result.response;
-          return response.text();
-        })();
+        // Calculate retry delay with exponential backoff
+        const retryDelay = await rateLimiter.handleRateLimitError(error, `model-${modelName}`);
         
-        const timeoutPromise = new Promise<string>((_, reject) => {
-          setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs / 1000}s`)), timeoutMs);
-        });
-        
-        const text = await Promise.race([generatePromise, timeoutPromise]);
-        
-        console.log(`✅ Successfully generated content using model: ${modelName}`);
-        return text;
-      } catch (error: any) {
-        lastError = error;
-        
-        // If it's a timeout, don't try more models - throw immediately
-        if (error.message?.includes('timeout') || error.message?.includes('Timeout')) {
-          console.log(`⏱️ Timeout with ${modelName}, aborting...`);
-          throw new Error(`Request timed out after ${timeoutMs / 1000}s. The AI generation is taking too long.`);
-        }
-        
-        // If it's a 404/model not found error, try the next model immediately
-        if (error.message?.includes('404') || 
-            error.message?.includes('not found') ||
-            error.message?.includes('is not found')) {
-          console.log(`⚠️ Model ${modelName} not available, trying next...`);
-          continue; // Try next model
-        } 
-        // If it's a rate limit error, wait and retry with exponential backoff
-        else if (error.message?.includes('429') || 
-                 error.message?.includes('Too Many Requests') ||
-                 error.message?.includes('rate limit') ||
-                 error.message?.includes('quota') ||
-                 error.status === 429 ||
-                 error.code === 429 ||
-                 error.statusCode === 429) {
-          console.log(`⚠️ Rate limit hit for ${modelName}, waiting before retry...`);
+        // Retry this model once after delay
+        try {
+          console.log(`🔄 Retrying ${modelName} after rate limit delay...`);
+          const model = genAI.getGenerativeModel({ 
+            model: modelName,
+            generationConfig: {
+              temperature: config.temperature ?? 0.7,
+              maxOutputTokens: config.maxTokens,
+            },
+          });
           
-          // Calculate retry delay with exponential backoff
-          const retryDelay = await rateLimiter.handleRateLimitError(error, `model-${modelName}`);
+          const generatePromise = (async () => {
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            return response.text();
+          })();
           
-          // Retry this model once after delay
-          try {
-            console.log(`🔄 Retrying ${modelName} after rate limit delay...`);
-            const model = genAI.getGenerativeModel({ 
-              model: modelName,
-              generationConfig: {
-                temperature: config.temperature ?? 0.7,
-                maxOutputTokens: config.maxTokens,
-              },
-            });
-            
-            const generatePromise = (async () => {
-              const result = await model.generateContent(prompt);
-              const response = await result.response;
-              return response.text();
-            })();
-            
-            const timeoutPromise = new Promise<string>((_, reject) => {
-              setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs / 1000}s`)), timeoutMs);
-            });
-            
-            const text = await Promise.race([generatePromise, timeoutPromise]);
-            console.log(`✅ Successfully generated content using model: ${modelName} (after rate limit retry)`);
-            return text;
-          } catch (retryError: any) {
-            // If retry also fails with rate limit, try next model
-            if (retryError.message?.includes('429') || retryError.status === 429) {
-              console.log(`⚠️ Rate limit still active for ${modelName}, trying next model...`);
-              lastError = retryError;
-              continue;
-            }
-            // If retry fails for other reason, try next model
-            lastError = retryError;
-            continue;
-          }
-        } 
-        // For other errors, try next model
-        else {
-          console.log(`⚠️ Error with ${modelName}: ${error.message}. Trying next model...`);
-          continue; // Try next model
+          const timeoutPromise = new Promise<string>((_, reject) => {
+            setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs / 1000}s`)), timeoutMs);
+          });
+          
+          const text = await Promise.race([generatePromise, timeoutPromise]);
+          console.log(`✅ Successfully generated content using model: ${modelName} (after rate limit retry)`);
+          return text;
+        } catch (retryError: any) {
+          // If retry fails, throw the error - no fallback to other models
+          lastError = retryError;
+          throw new Error(`Failed to generate content with ${modelName} after retry: ${retryError.message || 'Unknown error'}`);
         }
       }
-    }
-    
-    // If all models failed, throw a detailed error
-    let lastErrorMsg = 'All models failed';
-    if (lastError) {
+      
+      // For all other errors (including 404/model not found), throw immediately - no fallbacks
+      let errorMsg = 'Unknown error';
       if (lastError?.message) {
-        lastErrorMsg = lastError.message;
+        errorMsg = lastError.message;
       } else if (typeof lastError === 'string') {
-        lastErrorMsg = lastError;
+        errorMsg = lastError;
       } else if (lastError?.toString && typeof lastError.toString === 'function') {
         const str = lastError.toString();
         if (str !== '[object Object]') {
-          lastErrorMsg = str;
+          errorMsg = str;
         }
       } else {
         try {
-          lastErrorMsg = JSON.stringify(lastError);
+          errorMsg = JSON.stringify(lastError);
         } catch {
-          lastErrorMsg = 'Unknown error format';
+          errorMsg = 'Unknown error format';
         }
       }
+      
+      throw new Error(
+        `Failed to generate content with ${modelName}. ` +
+        `Error: ${errorMsg}`
+      );
     }
-    
-    throw new Error(
-      `No available Gemini models found. Tried: ${modelNames.join(', ')}. ` +
-      `Last error: ${lastErrorMsg}`
-    );
   }
 }
 
