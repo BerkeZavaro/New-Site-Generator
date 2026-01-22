@@ -132,14 +132,15 @@ export async function POST(request: NextRequest) {
     // Validate that we have template fields to work with
     if (!templateFields || templateFields.length === 0) {
       const imageSlots = template.slots?.filter(s => s?.type === 'image').length || 0;
-      const textSlots = template.slots?.filter(s => s?.type !== 'image').length || 0;
+      const ctaSlots = template.slots?.filter(s => s?.type === 'cta').length || 0;
+      const textSlots = template.slots?.filter(s => s?.type !== 'image' && s?.type !== 'cta').length || 0;
       
       console.error('❌ No template fields found after processing:', {
         templateId,
         totalSlots: template.slots?.length || 0,
         textSlots,
         imageSlots,
-        urlSlots,
+        ctaSlots,
         templateFieldsLength: templateFields?.length,
         allSlots: template.slots,
       });
@@ -147,8 +148,8 @@ export async function POST(request: NextRequest) {
       return Response.json(
         { 
           error: 'Failed to map narrative to slots',
-          details: `Template "${templateId}" has no valid text content slots. Found ${template.slots?.length || 0} total slots (${imageSlots} images, ${urlSlots} links, ${textSlots} text slots), but none are valid for content generation. Please ensure your template has text-based content slots (headings, paragraphs, lists) defined.`,
-          hint: `Image and URL slots are excluded from narrative mapping. You need at least one text, list, or rich-text slot.`,
+          details: `Template "${templateId}" has no valid text content slots. Found ${template.slots?.length || 0} total slots (${imageSlots} images, ${ctaSlots} CTAs, ${textSlots} text slots), but none are valid for content generation. Please ensure your template has text-based content slots (headings, paragraphs, lists) defined.`,
+          hint: `Image slots are excluded from narrative mapping. You need at least one text, list, or rich-text slot.`,
         },
         { status: 400 }
       );

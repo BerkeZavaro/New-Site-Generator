@@ -64,8 +64,8 @@ export function buildUploadedTemplateFiles(
           );
         }
         return updatedTag;
-      } else if (slot.type === "url" && tagNameLower === "a") {
-        // For links, preserve the opening tag and only update href attribute
+      } else if (slot.type === "cta" && tagNameLower === "a") {
+        // For links/CTAs, preserve the opening tag and only update href attribute
         const updatedTag = openTag.replace(
           /(href=["'])([^"']*)(["'])/i,
           `$1${escapedContent}$3`

@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import type { UploadedTemplate } from "@/lib/templates/uploadedTypes";
+import type { TemplateConfig } from "@/lib/templates/types";
 
 interface UploadedTemplateRendererProps {
-  template: UploadedTemplate;
+  template: TemplateConfig;
   slotData: Record<string, string>; // slotId -> content
 }
 
@@ -53,7 +53,8 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
         
         elements.forEach((el) => {
           // For text/list slots, replace innerHTML or textContent
-          if (slot.type === "text" || slot.type === "list") {
+          const isTextSlot = ["text", "paragraph", "headline", "subheadline"].includes(slot.type);
+          if (isTextSlot || slot.type === "list") {
             // Check if this is a heading element (h1, h2, h3, etc.)
             if (el.tagName.match(/^H[1-6]$/)) {
               // For headings, preserve the element and just update text content
@@ -166,8 +167,8 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
             if (slotContent) {
               (el as HTMLImageElement).alt = slotContent || "Image";
             }
-          } else if (slot.type === "url" && el.tagName === "A") {
-            // For links, set href attribute (preserves all other attributes)
+          } else if (slot.type === "cta" && el.tagName === "A") {
+            // For links/CTAs, set href attribute (preserves all other attributes)
             (el as HTMLAnchorElement).href = slotContent;
           }
         });

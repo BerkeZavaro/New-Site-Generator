@@ -130,10 +130,10 @@ export default function EditTemplatePage({ params }: { params: Promise<{ id: str
           .replace(/_/g, " ")
           .replace(/\b\w/g, (c) => c.toUpperCase());
 
-        let type: TemplateSlot["type"] = "text";
+        let type: TemplateSlot["type"] = "paragraph";
         if (el.tagName === "UL" || el.tagName === "OL") type = "list";
         if (el.tagName === "IMG") type = "image";
-        if (el.tagName === "A") type = "url";
+        if (el.tagName === "A") type = "cta";
 
         slots.push({ id, type, label });
       });
