@@ -12,11 +12,12 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
   const [renderedHtml, setRenderedHtml] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  // Inject CSS first (separate effect to ensure it's loaded)
+  // Inject CSS and head content (link stylesheets, style blocks)
   useEffect(() => {
     const styleId = `uploaded-template-${template.id}-styles`;
+    const headMarker = "data-uploaded-template-head";
     let style = document.getElementById(styleId) as HTMLStyleElement;
-    
+
     if (template.css) {
       if (!style) {
         style = document.createElement("style");
@@ -28,10 +29,23 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
       style.remove();
     }
 
+    document.querySelectorAll(`[${headMarker}]`).forEach((el) => el.remove());
+
+    const headContent = (template as { headContent?: string }).headContent;
+    if (headContent) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${headContent}</div>`, "text/html");
+      doc.querySelectorAll("link, style").forEach((el) => {
+        const clone = el.cloneNode(true) as HTMLElement;
+        clone.setAttribute(headMarker, template.id);
+        document.head.appendChild(clone);
+      });
+    }
+
     return () => {
-      // Keep style for reuse - don't remove on unmount
+      document.querySelectorAll(`[${headMarker}]`).forEach((el) => el.remove());
     };
-  }, [template.css, template.id]);
+  }, [template.css, template.id, (template as { headContent?: string }).headContent]);
 
   // Process HTML and replace slot content
   useEffect(() => {

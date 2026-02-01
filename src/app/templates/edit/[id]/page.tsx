@@ -135,7 +135,19 @@ export default function EditTemplatePage({ params }: { params: Promise<{ id: str
         if (el.tagName === "IMG") type = "image";
         if (el.tagName === "A") type = "cta";
 
-        slots.push({ id, type, label });
+        let originalContent: string | undefined;
+        if (type === "image") {
+          originalContent = el.getAttribute("src")?.trim() || undefined;
+        } else if (type === "list") {
+          const items = el.querySelectorAll("li");
+          originalContent = items.length > 0
+            ? Array.from(items).map(li => li.textContent?.trim() || "").filter(Boolean).join("\n")
+            : el.textContent?.trim() || undefined;
+        } else {
+          originalContent = el.textContent?.trim() || undefined;
+        }
+
+        slots.push({ id, type, label, ...(originalContent ? { originalContent } : {}) });
       });
     } else {
       // No slots found - automatically detect them

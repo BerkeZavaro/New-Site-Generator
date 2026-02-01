@@ -292,7 +292,8 @@ function WizardPageContent() {
       const newSlotData: Record<string, string> = {};
       selected.slots.forEach(slot => {
         if (!data.slotData || !(slot.id in data.slotData)) {
-          newSlotData[slot.id] = '';
+          // Pre-fill with originalContent for uploaded templates so preview matches source before "Generate"
+          newSlotData[slot.id] = slot.originalContent ?? '';
         }
       });
       if (Object.keys(newSlotData).length > 0) {

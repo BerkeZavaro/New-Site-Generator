@@ -204,9 +204,16 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     throw new Error('No valid template fields provided for narrative mapping');
   }
 
-  // Build enhanced field descriptions with structure context
+  // Build enhanced field descriptions with structure context and original content reference
   const enhancedFieldDescriptions = validFields.map((field, index) => {
     let desc = `- ${field.slotId} (${field.slotType}): ${field.label}`;
+    if (field.originalContent) {
+      const preview = field.originalContent.length > 100
+        ? field.originalContent.substring(0, 100) + '...'
+        : field.originalContent;
+      const charCount = field.originalContent.length;
+      desc += `\n  (Reference Original Content: "${preview}" | LENGTH CONSTRAINT: ~${charCount} chars - your output must match this approximate length)`;
+    }
     if (field.description) {
       desc += ` - ${field.description}`;
     }
@@ -217,41 +224,36 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
       desc += ` [Note: ${field.instructions}]`;
     }
     
-    // Add structure context based on label and slot type - match exact tag types from original template
     const labelLower = field.label.toLowerCase();
     const slotTypeLower = field.slotType.toLowerCase();
-    
-    // Check slot type first (more reliable than label parsing)
     if (slotTypeLower === 'list') {
-      desc += ` [STRUCTURE: This is a LIST (UL or OL tag) - format as one item per line. Each line should be a complete bullet point or list item. Extract 3-8 key points from the narrative. REQUIRED - you must provide content for this slot.]`;
-    } else if (labelLower.startsWith('h1 heading ')) {
-      // H1 Heading 1, H1 Heading 2, etc. - these are H1 elements
-      desc += ` [STRUCTURE: This is an H1 HEADING - must be ONE LINE only, concise and attention-grabbing. Do NOT include paragraph text. Preserve the H1 tag structure.]`;
-    } else if (labelLower.startsWith('h2 subheading ')) {
-      // H2 Subheading 1, H2 Subheading 2, etc. - these are H2 elements
-      desc += ` [STRUCTURE: This is an H2 SUBHEADING - must be ONE LINE only, supporting the main heading. Do NOT include paragraph text. Preserve the H2 tag structure.]`;
-    } else if (labelLower.startsWith('h3 section header ')) {
-      // H3 Section Header 1, etc. - these are H3 elements
-      desc += ` [STRUCTURE: This is an H3 SECTION HEADER - must be ONE LINE only, descriptive of the section. Do NOT include paragraph text. Preserve the H3 tag structure.]`;
-    } else if (labelLower.startsWith('h4 subsection ') || labelLower.startsWith('h5 ') || labelLower.startsWith('h6 ')) {
-      // H4, H5, H6 elements
-      desc += ` [STRUCTURE: This is a HEADING - must be ONE LINE only. Do NOT include paragraph text. Preserve the original tag structure.]`;
-    } else if (labelLower.startsWith('paragraph ')) {
-      // Paragraph 1, Paragraph 2, etc. - these are P elements
-      desc += ` [STRUCTURE: This is a PARAGRAPH (P tag) - must be a FULL PARAGRAPH with multiple sentences. This is NOT a heading. Preserve the P tag structure.]`;
-    } else if (labelLower.startsWith('list ') || labelLower.includes(' list ')) {
-      // Catch "List 1", "UL List 1", "OL List 1", etc.
-      desc += ` [STRUCTURE: This is a LIST (UL or OL tag) - format as one item per line. Each line should be a complete bullet point or list item. Extract 3-8 key points from the narrative. REQUIRED - you must provide content for this slot.]`;
-    } else if (labelLower.startsWith('content block ')) {
-      desc += ` [STRUCTURE: This is a CONTENT BLOCK - extract multiple sentences or a full paragraph from the narrative that fits this section. REQUIRED - you must provide content for this slot.]`;
-    } else if (labelLower.startsWith('image ')) {
-      desc += ` [STRUCTURE: This is an IMAGE - provide a URL or image data]`;
+      desc += ` [CONSTRAINT: List format - one item per line. Extract 3-8 key points. Match the number/format of Reference Original Content if present.]`;
+    } else if (labelLower.includes('heading') || labelLower.includes('h1') || labelLower.includes('h2') || labelLower.includes('subhead') || labelLower.includes('h3') || labelLower.includes('h4') || labelLower.includes('h5') || labelLower.includes('h6')) {
+      desc += ` [CONSTRAINT: Write a SHORT single line (3-10 words). Match the length of the Reference Original Content.]`;
+    } else if (labelLower.includes('paragraph') || labelLower.includes('content block')) {
+      desc += ` [CONSTRAINT: Write a full paragraph. Match the approximate length/depth of the Reference Original Content.]`;
+    } else if (slotTypeLower === 'cta') {
+      desc += ` [CONSTRAINT: Short CTA (e.g. button label). Match the brevity of the Reference Original Content.]`;
+    } else if (labelLower.includes('image')) {
+      desc += ` [CONSTRAINT: Provide image URL or path.]`;
     }
     
     return desc;
   }).join('\n');
 
+  const hasOriginalContent = validFields.some(f => f.originalContent);
+  const originalContentInstruction = hasOriginalContent
+    ? `
+
+**CRITICAL - MATCH ORIGINAL LENGTH AND FORMAT:**
+Each slot shows "Reference Original Content" with a LENGTH CONSTRAINT (character count). Your output MUST match that approximate length:
+- If the constraint says ~15 chars, write ~15 chars (e.g. a short phrase).
+- If the constraint says ~200 chars, write ~200 chars (e.g. a full paragraph).
+- Do NOT output HTML tags. Exceeding the length constraint breaks the layout.`
+    : '';
+
   const prompt = `You are a professional copywriter. Your task is to extract and distribute content from a Core Narrative into specific template slots while PRESERVING THE EXACT STRUCTURE of the original template.
+${originalContentInstruction}
 
 **Core Narrative (Source of Truth):**
 ${coreNarrative}
@@ -275,10 +277,11 @@ ${userConfig.targetStates && userConfig.targetStates.length > 0
 **CRITICAL REQUIREMENTS - READ CAREFULLY:**
 1. **YOU MUST INCLUDE ALL ${validFields.length} SLOTS IN YOUR RESPONSE - NO EXCEPTIONS.** Every single slot ID listed above MUST appear as a key in your JSON response. Missing even ONE slot will cause the system to fail. Count your keys before responding - you must have exactly ${validFields.length} keys.
 2. Extract content from the Core Narrative for each field. Do NOT create new content that isn't in the narrative.
-3. PRESERVE STRUCTURE: If a slot is labeled as "Headline" or "H1", it should be ONE LINE only. If it's "Paragraph" or "Body", it should be a full paragraph.
-4. For headings (H1, H2, H3, etc.), extract or create a SINGLE LINE that captures the essence. Do NOT include paragraph text in headings.
-5. For paragraphs, extract or adapt full paragraph content with multiple sentences.
-6. **FOR LISTS (type: list, slot IDs containing "list"):** 
+3. **MATCH ORIGINAL LENGTH AND FORMAT:** When a slot shows "Reference Original Content", your generated content MUST have similar length and format. If the reference is 3 words, generate ~3 words—NOT a long sentence. This prevents layout breakage.
+4. PRESERVE STRUCTURE: If a slot is labeled as "Headline" or "H1", it should be ONE LINE only. If it's "Paragraph" or "Body", it should be a full paragraph.
+5. For headings (H1, H2, H3, etc.), extract or create a SINGLE LINE that captures the essence. Do NOT include paragraph text in headings.
+6. For paragraphs, extract or adapt full paragraph content with multiple sentences.
+7. **FOR LISTS (type: list, slot IDs containing "list"):** 
    - **THIS IS CRITICAL - LIST SLOTS ARE OFTEN MISSED BUT ARE REQUIRED**
    - Extract 3-8 key points from the narrative
    - Format as one item per line (each line is a bullet point, separated by newlines)
@@ -288,12 +291,12 @@ ${userConfig.targetStates && userConfig.targetStates.length > 0
    - If the narrative doesn't have enough list items, extract and adapt related points from the narrative
    - **DO NOT SKIP LIST SLOTS - THEY ARE MANDATORY AND WILL CAUSE ERRORS IF MISSING**
    - Look for ALL slots with "list" in their ID or type - include every single one
-7. **For content blocks:** Extract the main content from the narrative that fits that section. This can be multiple sentences or paragraphs combined. **DO NOT skip content blocks - they are required**
-8. Maintain consistency - all fields should align with the same narrative thread.
-9. Respect length constraints where specified.
-10. Use the exact slot IDs provided as keys in your response. **DO NOT use different slot IDs or skip any slots.**
-11. **CRITICAL: DO NOT include HTML tags in your response.** Return ONLY plain text content. The template already has the HTML structure (H1, H2, P, UL, OL tags). You should provide just the text that goes inside those tags. For example, return "My Heading Text" NOT "<h1>My Heading Text</h1>".
-12. **VERIFICATION STEP: Before submitting, count the number of keys in your JSON. It MUST equal ${validFields.length}. If it doesn't, you're missing slots - go back and add them.**
+8. **For content blocks:** Extract the main content from the narrative that fits that section. This can be multiple sentences or paragraphs combined. **DO NOT skip content blocks - they are required**
+9. Maintain consistency - all fields should align with the same narrative thread.
+10. Respect length constraints where specified.
+11. Use the exact slot IDs as JSON keys (e.g. "money_back_guarantee" NOT "Money Back Guarantee"). **DO NOT use human-readable labels or skip any slots.**
+12. **CRITICAL: DO NOT include HTML tags in your response.** Return ONLY plain text content. The template already has the HTML structure (H1, H2, P, UL, OL tags). You should provide just the text that goes inside those tags. For example, return "My Heading Text" NOT "<h1>My Heading Text</h1>".
+13. **VERIFICATION STEP: Before submitting, count the number of keys in your JSON. It MUST equal ${validFields.length}. If it doesn't, you're missing slots - go back and add them.**
 
 **Response Format:**
 You MUST respond with ONLY valid JSON in this exact format (no markdown, no code blocks, no explanations). **INCLUDE ALL ${validFields.length} SLOTS - DO NOT SKIP ANY:**

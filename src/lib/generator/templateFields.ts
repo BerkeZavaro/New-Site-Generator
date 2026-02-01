@@ -123,6 +123,7 @@ export function getTemplateFields(template: TemplateConfig): TemplateFieldDefini
       description: special?.description || `Content slot: ${slot.label}`,
       maxLength: special?.maxLength || maxLength,
       instructions: special?.instructions || defaultInstructions,
+      ...(slot.originalContent != null ? { originalContent: slot.originalContent } : {}),
     };
   });
 }

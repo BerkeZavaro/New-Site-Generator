@@ -167,6 +167,8 @@ export interface TemplateFieldDefinition {
   maxLength?: number;
   /** Optional: Description of what content should go in this slot */
   description?: string;
+  /** Optional: Original content from scraped template - used as length/style reference for AI */
+  originalContent?: string;
 }
 
 /**

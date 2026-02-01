@@ -535,11 +535,28 @@ export class ContentGenerator {
       }
     }
 
+    const actualSlotIds = Object.keys(parsed);
+    const normalizeKey = (s: string) =>
+      s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const findMatchingKey = (slotId: string, label: string): string | undefined => {
+      if (parsed[slotId] !== undefined && parsed[slotId] !== null) return slotId;
+      const normSlot = normalizeKey(slotId);
+      const normLabel = normalizeKey(label);
+      for (const key of actualSlotIds) {
+        const normKey = normalizeKey(key);
+        if (normKey === normSlot || normKey === normLabel) return key;
+        if (normKey.startsWith(normSlot) || normSlot.startsWith(normKey)) return key;
+        if (normKey.startsWith(normLabel) || normLabel.startsWith(normKey)) return key;
+      }
+      return undefined;
+    };
+
     const slots: Record<string, string> = {};
     const errors: Record<string, string> = {};
     
     for (const field of batchFields) {
-      const slotValue = parsed[field.slotId];
+      const matchedKey = findMatchingKey(field.slotId, field.label);
+      const slotValue = matchedKey !== undefined ? parsed[matchedKey] : undefined;
       
       if (slotValue === undefined || slotValue === null) {
         errors[field.slotId] = 'Slot not found in AI response';
@@ -845,13 +862,31 @@ export class ContentGenerator {
       // Log summary
       console.log(`📊 Slot mapping summary: ${actualSlotIds.length} returned, ${expectedSlotIds.length} expected, ${missingSlots.length} missing`);
 
+      // Helper: normalize key for fuzzy matching (AI sometimes returns labels instead of slot IDs)
+      const normalizeKey = (s: string) =>
+        s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      const findMatchingKey = (slotId: string, label: string): string | undefined => {
+        const exact = parsed[slotId];
+        if (exact !== undefined && exact !== null) return slotId;
+        const normSlot = normalizeKey(slotId);
+        const normLabel = normalizeKey(label);
+        for (const key of actualSlotIds) {
+          const normKey = normalizeKey(key);
+          if (normKey === normSlot || normKey === normLabel) return key;
+          if (normKey.startsWith(normSlot) || normSlot.startsWith(normKey)) return key;
+          if (normKey.startsWith(normLabel) || normLabel.startsWith(normKey)) return key;
+        }
+        return undefined;
+      };
+
       // Validate that all required slots are present
       const slotErrors: Record<string, string> = {};
       const slots: Record<string, string> = {};
       
       // Use validFields instead of request.templateFields
       for (const field of validFields) {
-        const slotValue = parsed[field.slotId];
+        const matchedKey = findMatchingKey(field.slotId, field.label);
+        const slotValue = matchedKey !== undefined ? parsed[matchedKey] : undefined;
         
         if (slotValue === undefined || slotValue === null) {
           slotErrors[field.slotId] = 'Slot not found in AI response';

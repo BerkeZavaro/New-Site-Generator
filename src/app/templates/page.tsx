@@ -142,14 +142,14 @@ export default function TemplatesPage() {
                             onClick={() => {
                               const htmlContent = template.htmlBody;
                               const cssContent = template.css || '';
+                              const headContent = (template as { headContent?: string }).headContent || '';
                               const fullContent = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <title>${template.name}</title>
-  <style>
-${cssContent}
-  </style>
+  ${headContent}
+  ${cssContent ? `<style>\n${cssContent}\n  </style>` : ''}
 </head>
 <body>
 ${htmlContent}

@@ -99,6 +99,7 @@ export function buildUploadedTemplateFiles(
   });
 
   const css = template.css || "";
+  const headContent = (template as { headContent?: string }).headContent || "";
 
   // Build complete HTML
   const html = `<!DOCTYPE html>
@@ -107,9 +108,8 @@ export function buildUploadedTemplateFiles(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${template.name}</title>
-  <style>
-${css}
-  </style>
+  ${headContent}
+  ${css ? `<style>\n${css}\n  </style>` : ""}
 </head>
 <body>
 ${bodyHtml}

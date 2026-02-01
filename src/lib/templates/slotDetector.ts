@@ -124,14 +124,28 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
     const slotId = generateSlotId(element, type, text, slots);
     const label = generateLabel(slotId);
 
-    // 4. Mark the DOM
+    // 4. Capture original content (textContent for text, src for images)
+    let originalContent: string;
+    if (type === 'image') {
+      originalContent = (element.getAttribute('src') || '').trim();
+    } else if (type === 'list') {
+      const items = element.querySelectorAll('li');
+      originalContent = items.length > 0
+        ? Array.from(items).map(li => li.textContent?.trim() || '').filter(Boolean).join('\n')
+        : text;
+    } else {
+      originalContent = text;
+    }
+
+    // 5. Mark the DOM
     element.setAttribute('data-slot', slotId);
 
-    // 5. Register Slot
+    // 6. Register Slot
     slots.push({
       id: slotId,
       type,
       label,
+      ...(originalContent ? { originalContent } : {}),
     });
     slotCounter++;
   });
@@ -250,7 +264,24 @@ function detectSlotsRegex(htmlBody: string): DetectSlotsResult {
       }
 
       const label = generateLabel(slotId);
-      slots.push({ id: slotId, type, label });
+      let originalContent: string;
+      if (type === 'image') {
+        originalContent = (attrs.match(/src=["']([^"']*)["']/i)?.[1] || '').trim();
+      } else if (type === 'list' && (tagNameLower === 'ul' || tagNameLower === 'ol')) {
+        const liMatches = content.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
+        originalContent = liMatches
+          .map(m => m.replace(/<li[^>]*>([\s\S]*?)<\/li>/i, '$1').replace(/<[^>]*>/g, '').trim())
+          .filter(Boolean)
+          .join('\n') || textContent.trim();
+      } else {
+        originalContent = textContent.trim();
+      }
+      slots.push({
+        id: slotId,
+        type,
+        label,
+        ...(originalContent ? { originalContent } : {}),
+      });
 
       // Add data-slot attribute
       return `<${tagName}${attrs} data-slot="${slotId}">${content}</${tagName}>`;
@@ -262,7 +293,14 @@ function detectSlotsRegex(htmlBody: string): DetectSlotsResult {
         if (attrs.includes('data-slot')) return match;
         const slotId = `image_${slots.length}`;
         const label = generateLabel(slotId);
-        slots.push({ id: slotId, type: 'image', label });
+        const srcMatch = attrs.match(/src=["']([^"']*)["']/i);
+        const originalContent = srcMatch?.[1]?.trim() || '';
+        slots.push({
+          id: slotId,
+          type: 'image',
+          label,
+          ...(originalContent ? { originalContent } : {}),
+        });
         return `<img${attrs} data-slot="${slotId}">`;
       });
     }

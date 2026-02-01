@@ -9,6 +9,8 @@ export type TemplateSlot = {
   id: string;           // e.g. "page_title", "pageHeadline"
   type: SlotType;       // Type of content slot
   label: string;        // Human-readable label, e.g. "Page title"
+  /** Original content from scraped/uploaded HTML - used as length/style reference for AI generation */
+  originalContent?: string;
 };
 
 /**
@@ -22,6 +24,8 @@ export type TemplateConfig = {
   description?: string; // Optional description
   htmlBody: string;     // HTML structure (innerHTML from <body>)
   css?: string;         // CSS styles
+  /** Resolved <link rel="stylesheet"> and <style> from head - for uploaded/scraped templates */
+  headContent?: string;
   slots: TemplateSlot[]; // Array of editable content slots
   createdAt?: string;   // ISO date (optional for system templates)
   createdBy?: "system" | "uploaded"; // Origin of template
