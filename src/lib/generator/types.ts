@@ -167,8 +167,12 @@ export interface TemplateFieldDefinition {
   maxLength?: number;
   /** Optional: Description of what content should go in this slot */
   description?: string;
+  /** Optional: HTML element tag (e.g. 'h1', 'p') - for strict AI length constraints */
+  tagName?: string;
   /** Optional: Original content from scraped template - used as length/style reference for AI */
   originalContent?: string;
+  /** Optional: Word count of original content - for strict AI length enforcement */
+  wordCount?: number;
 }
 
 /**

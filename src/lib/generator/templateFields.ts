@@ -121,9 +121,11 @@ export function getTemplateFields(template: TemplateConfig): TemplateFieldDefini
       label: slot.label,
       slotType,
       description: special?.description || `Content slot: ${slot.label}`,
-      maxLength: special?.maxLength || maxLength,
+      maxLength: slot.maxLength ?? special?.maxLength ?? maxLength,
       instructions: special?.instructions || defaultInstructions,
+      ...(slot.tagName ? { tagName: slot.tagName } : {}),
       ...(slot.originalContent != null ? { originalContent: slot.originalContent } : {}),
+      ...(slot.wordCount != null ? { wordCount: slot.wordCount } : {}),
     };
   });
 }
@@ -162,19 +164,48 @@ export function getCreatineReportFields(): TemplateFieldDefinition[] {
   return [];
 }
 
+/** Slot shape accepted by getUploadedTemplateFields (extends TemplateSlot) */
+type UploadedSlotInput = {
+  id: string;
+  label: string;
+  type: string;
+  tagName?: string;
+  originalContent?: string;
+};
+
+/**
+ * Compute maxLength from tagName and originalContent (smart length logic).
+ */
+function getSmartMaxLength(slot: UploadedSlotInput): number | undefined {
+  const tag = (slot.tagName || '').toLowerCase();
+  const len = slot.originalContent?.length ?? 0;
+  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) return len + 15;
+  if (tag === 'p') return len + 50;
+  return undefined;
+}
+
 /**
  * @deprecated Use getTemplateFields instead.
  * Kept for backward compatibility during migration.
  */
 export function getUploadedTemplateFields(
-  slots: Array<{ id: string; label: string; type: string }>
+  slots: Array<UploadedSlotInput>
 ): TemplateFieldDefinition[] {
-  // Convert to TemplateConfig format and use unified function
   const mockTemplate: TemplateConfig = {
     id: 'temp',
     name: 'Temp',
     htmlBody: '',
-    slots: slots.map(s => ({ id: s.id, type: s.type as any, label: s.label })),
+    slots: slots.map(s => {
+      const smartMax = getSmartMaxLength(s);
+      return {
+        id: s.id,
+        type: s.type as import('@/lib/templates/types').SlotType,
+        label: s.label,
+        ...(s.tagName ? { tagName: s.tagName } : {}),
+        ...(s.originalContent != null ? { originalContent: s.originalContent } : {}),
+        ...(smartMax != null ? { maxLength: smartMax } : {}),
+      };
+    }),
   };
   return getTemplateFields(mockTemplate);
 }

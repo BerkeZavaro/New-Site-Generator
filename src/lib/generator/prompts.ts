@@ -204,40 +204,47 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     throw new Error('No valid template fields provided for narrative mapping');
   }
 
-  // Build enhanced field descriptions with structure context and original content reference
-  const enhancedFieldDescriptions = validFields.map((field, index) => {
+  const wordCountFromStr = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
+  // Iterate through templateFields and build descriptions with strict constraints from tagName + originalContent
+  const enhancedFieldDescriptions = validFields.map((field) => {
     let desc = `- ${field.slotId} (${field.slotType}): ${field.label}`;
-    if (field.originalContent) {
-      const preview = field.originalContent.length > 100
-        ? field.originalContent.substring(0, 100) + '...'
-        : field.originalContent;
-      const charCount = field.originalContent.length;
-      desc += `\n  (Reference Original Content: "${preview}" | LENGTH CONSTRAINT: ~${charCount} chars - your output must match this approximate length)`;
+    const orig = field.originalContent || '';
+    const origWordCount = field.wordCount ?? wordCountFromStr(orig);
+    const preview = orig.length > 120 ? orig.substring(0, 120) + '...' : orig;
+
+    if (orig) {
+      desc += `\n  Style Reference: "${preview}"`;
     }
-    if (field.description) {
-      desc += ` - ${field.description}`;
+    if (field.description) desc += ` - ${field.description}`;
+
+    const tag = (field.tagName || '').toLowerCase();
+
+    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+      const maxChars = field.maxLength ?? orig.length + 15;
+      desc += ` [CONSTRAINT: Write a short headline. Max length: ${maxChars} characters. No periods.]`;
+    } else if (tag === 'p') {
+      const words = origWordCount > 0 ? origWordCount : 50;
+      desc += ` [CONSTRAINT: Write a paragraph approx ${words} words long.]`;
+    } else if (tag === 'ul' || tag === 'ol') {
+      const itemCount = orig.includes('\n') ? orig.split('\n').filter(Boolean).length : 0;
+      const range = itemCount > 0 ? ` (~${itemCount} items)` : '';
+      desc += ` [CONSTRAINT: List format - one item per line${range}. Each line = one concise list item.]`;
+    } else if (tag === 'li') {
+      desc += ` [CONSTRAINT: Write a single list item.]`;
+    } else if (tag === 'img') {
+      desc += ` [CONSTRAINT: Return image URL only. No text. Use original URL or https://via.placeholder.com/400]`;
+    } else if (tag === 'a') {
+      const maxChars = field.maxLength ?? Math.min(orig.length + 15, 50);
+      desc += ` [CONSTRAINT: Short CTA. Max length: ${maxChars} characters. No periods.]`;
+    } else if (field.slotType === 'list') {
+      desc += ` [CONSTRAINT: List format - one item per line. Each line = one concise list item.]`;
+    } else if (field.slotType === 'cta') {
+      desc += ` [CONSTRAINT: Short CTA. Max length: 50 characters. No periods.]`;
+    } else {
+      desc += ` [CONSTRAINT: Match the length and style of the Style Reference.]`;
     }
-    if (field.maxLength) {
-      desc += ` [Max ${field.maxLength} chars]`;
-    }
-    if (field.instructions) {
-      desc += ` [Note: ${field.instructions}]`;
-    }
-    
-    const labelLower = field.label.toLowerCase();
-    const slotTypeLower = field.slotType.toLowerCase();
-    if (slotTypeLower === 'list') {
-      desc += ` [CONSTRAINT: List format - one item per line. Extract 3-8 key points. Match the number/format of Reference Original Content if present.]`;
-    } else if (labelLower.includes('heading') || labelLower.includes('h1') || labelLower.includes('h2') || labelLower.includes('subhead') || labelLower.includes('h3') || labelLower.includes('h4') || labelLower.includes('h5') || labelLower.includes('h6')) {
-      desc += ` [CONSTRAINT: Write a SHORT single line (3-10 words). Match the length of the Reference Original Content.]`;
-    } else if (labelLower.includes('paragraph') || labelLower.includes('content block')) {
-      desc += ` [CONSTRAINT: Write a full paragraph. Match the approximate length/depth of the Reference Original Content.]`;
-    } else if (slotTypeLower === 'cta') {
-      desc += ` [CONSTRAINT: Short CTA (e.g. button label). Match the brevity of the Reference Original Content.]`;
-    } else if (labelLower.includes('image')) {
-      desc += ` [CONSTRAINT: Provide image URL or path.]`;
-    }
-    
+
     return desc;
   }).join('\n');
 
@@ -245,14 +252,20 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
   const originalContentInstruction = hasOriginalContent
     ? `
 
-**CRITICAL - MATCH ORIGINAL LENGTH AND FORMAT:**
-Each slot shows "Reference Original Content" with a LENGTH CONSTRAINT (character count). Your output MUST match that approximate length:
-- If the constraint says ~15 chars, write ~15 chars (e.g. a short phrase).
-- If the constraint says ~200 chars, write ~200 chars (e.g. a full paragraph).
-- Do NOT output HTML tags. Exceeding the length constraint breaks the layout.`
+**STYLE REFERENCE:**
+Each slot shows a "Style Reference" - the original scraped content. Your output MUST:
+- Mimic the length: use the character/word limits in each [CONSTRAINT].
+- Mimic the capitalization: If the Style Reference is Title Case, output Title Case. If lowercase, output lowercase. If ALL-CAPS, output ALL-CAPS. If it ends with ?, output a question.
+- Do NOT output HTML tags.`
     : '';
 
+  const tagNameInstruction = validFields.some(f => f.tagName) ? `
+
+**TAG RULES (CRITICAL):**
+Respect each slot's structure: Headlines (h1-h6) = short only. Paragraphs (p) = full sentences. Lists = one item per line. Never swap structures.` : '';
+
   const prompt = `You are a professional copywriter. Your task is to extract and distribute content from a Core Narrative into specific template slots while PRESERVING THE EXACT STRUCTURE of the original template.
+${tagNameInstruction}
 ${originalContentInstruction}
 
 **Core Narrative (Source of Truth):**
@@ -277,7 +290,7 @@ ${userConfig.targetStates && userConfig.targetStates.length > 0
 **CRITICAL REQUIREMENTS - READ CAREFULLY:**
 1. **YOU MUST INCLUDE ALL ${validFields.length} SLOTS IN YOUR RESPONSE - NO EXCEPTIONS.** Every single slot ID listed above MUST appear as a key in your JSON response. Missing even ONE slot will cause the system to fail. Count your keys before responding - you must have exactly ${validFields.length} keys.
 2. Extract content from the Core Narrative for each field. Do NOT create new content that isn't in the narrative.
-3. **MATCH ORIGINAL LENGTH AND FORMAT:** When a slot shows "Reference Original Content", your generated content MUST have similar length and format. If the reference is 3 words, generate ~3 words—NOT a long sentence. This prevents layout breakage.
+3. **MATCH STYLE REFERENCE:** When a slot shows "Style Reference", match its length and capitalization. If the reference is 3 words, generate ~3 words—NOT a long sentence. This prevents layout breakage.
 4. PRESERVE STRUCTURE: If a slot is labeled as "Headline" or "H1", it should be ONE LINE only. If it's "Paragraph" or "Body", it should be a full paragraph.
 5. For headings (H1, H2, H3, etc.), extract or create a SINGLE LINE that captures the essence. Do NOT include paragraph text in headings.
 6. For paragraphs, extract or adapt full paragraph content with multiple sentences.

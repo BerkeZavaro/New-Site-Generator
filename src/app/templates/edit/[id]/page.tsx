@@ -147,7 +147,24 @@ export default function EditTemplatePage({ params }: { params: Promise<{ id: str
           originalContent = el.textContent?.trim() || undefined;
         }
 
-        slots.push({ id, type, label, ...(originalContent ? { originalContent } : {}) });
+        const tagName = el.tagName.toLowerCase();
+        const wc = type !== "image" && originalContent
+          ? originalContent.trim().split(/\s+/).filter(Boolean).length
+          : undefined;
+        const len = originalContent?.length ?? 0;
+        const maxLen = type !== "image" && len > 0
+          ? (["h1","h2","h3","h4","h5","h6"].includes(tagName) ? Math.min(len + 15, 80)
+            : tagName === "a" || type === "cta" ? Math.min(len + 15, 50)
+            : tagName === "p" || type === "paragraph" ? Math.min(Math.ceil(len * 1.2), 800)
+            : ["ul","ol"].includes(tagName) || type === "list" ? Math.min(Math.ceil(len * 1.2), 800)
+            : Math.min(len + 20, 500))
+          : undefined;
+        slots.push({
+          id, type, label, tagName,
+          ...(originalContent ? { originalContent } : {}),
+          ...(wc != null ? { wordCount: wc } : {}),
+          ...(maxLen != null ? { maxLength: maxLen } : {}),
+        });
       });
     } else {
       // No slots found - automatically detect them

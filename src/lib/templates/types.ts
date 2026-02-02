@@ -9,8 +9,14 @@ export type TemplateSlot = {
   id: string;           // e.g. "page_title", "pageHeadline"
   type: SlotType;       // Type of content slot
   label: string;        // Human-readable label, e.g. "Page title"
+  /** HTML element tag (e.g. 'h1', 'p', 'ul') - used for strict AI length constraints */
+  tagName?: string;
   /** Original content from scraped/uploaded HTML - used as length/style reference for AI generation */
   originalContent?: string;
+  /** Word count of original content - e.g. 5 */
+  wordCount?: number;
+  /** Derived max length constraint (chars) for AI generation */
+  maxLength?: number;
 };
 
 /**

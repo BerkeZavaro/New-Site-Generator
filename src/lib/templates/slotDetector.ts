@@ -141,11 +141,17 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
     element.setAttribute('data-slot', slotId);
 
     // 6. Register Slot
+    const tag = element.tagName.toLowerCase();
+    const wc = type !== 'image' ? wordCount(originalContent) : undefined;
+    const maxLen = type !== 'image' ? deriveMaxLength(tag, originalContent, type) : undefined;
     slots.push({
       id: slotId,
       type,
       label,
+      tagName: tag,
       ...(originalContent ? { originalContent } : {}),
+      ...(wc != null ? { wordCount: wc } : {}),
+      ...(maxLen != null ? { maxLength: maxLen } : {}),
     });
     slotCounter++;
   });
@@ -218,6 +224,24 @@ function generateLabel(slotId: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** Word count for originalContent - used for strict AI length enforcement */
+function wordCount(s: string): number {
+  return s.trim().split(/\s+/).filter(Boolean).length;
+}
+
+/** Derive maxLength (chars) from tag and originalContent - prevents paragraphs in headlines */
+function deriveMaxLength(tag: string, originalContent: string, type: SlotType): number {
+  const len = originalContent.length;
+  const words = wordCount(originalContent);
+  const t = tag.toLowerCase();
+  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(t)) return Math.min(len + 15, 80);
+  if (t === 'a' || type === 'cta') return Math.min(len + 15, 50);
+  if (t === 'p' || type === 'paragraph') return Math.min(Math.ceil(len * 1.2), 800);
+  if (t === 'ul' || t === 'ol' || type === 'list') return Math.min(Math.ceil(len * 1.2), 800);
+  if (t === 'li') return Math.ceil(len * 1.15);
+  return Math.min(len + 20, 500);
+}
+
 /**
  * Fallback regex-based detection (for Node.js environment without DOM)
  */
@@ -227,11 +251,11 @@ function detectSlotsRegex(htmlBody: string): DetectSlotsResult {
   
   // Regex patterns for our granular types
   const patterns = [
-    { tag: 'h[1-2]', type: 'headline' as SlotType },
-    { tag: 'h[3-6]', type: 'subheadline' as SlotType },
-    { tag: 'p', type: 'paragraph' as SlotType },
-    { tag: '(?:ul|ol)', type: 'list' as SlotType },
-    { tag: 'a', type: 'cta' as SlotType },
+    { tag: '(h[1-2])', type: 'headline' as SlotType },
+    { tag: '(h[3-6])', type: 'subheadline' as SlotType },
+    { tag: '(p)', type: 'paragraph' as SlotType },
+    { tag: '(ul|ol)', type: 'list' as SlotType },
+    { tag: '(a)', type: 'cta' as SlotType },
     { tag: 'img', type: 'image' as SlotType },
   ];
 
@@ -264,23 +288,29 @@ function detectSlotsRegex(htmlBody: string): DetectSlotsResult {
       }
 
       const label = generateLabel(slotId);
+      const tagNameLower = (tagName || '').toString().toLowerCase();
       let originalContent: string;
       if (type === 'image') {
         originalContent = (attrs.match(/src=["']([^"']*)["']/i)?.[1] || '').trim();
       } else if (type === 'list' && (tagNameLower === 'ul' || tagNameLower === 'ol')) {
         const liMatches = content.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
         originalContent = liMatches
-          .map(m => m.replace(/<li[^>]*>([\s\S]*?)<\/li>/i, '$1').replace(/<[^>]*>/g, '').trim())
+          .map((m: string) => m.replace(/<li[^>]*>([\s\S]*?)<\/li>/i, '$1').replace(/<[^>]*>/g, '').trim())
           .filter(Boolean)
           .join('\n') || textContent.trim();
       } else {
         originalContent = textContent.trim();
       }
+      const wc = type !== 'image' ? wordCount(originalContent) : undefined;
+      const maxLen = type !== 'image' ? deriveMaxLength(tagNameLower || '', originalContent, type) : undefined;
       slots.push({
         id: slotId,
         type,
         label,
+        tagName: tagNameLower || undefined,
         ...(originalContent ? { originalContent } : {}),
+        ...(wc != null ? { wordCount: wc } : {}),
+        ...(maxLen != null ? { maxLength: maxLen } : {}),
       });
 
       // Add data-slot attribute
@@ -299,6 +329,7 @@ function detectSlotsRegex(htmlBody: string): DetectSlotsResult {
           id: slotId,
           type: 'image',
           label,
+          tagName: 'img',
           ...(originalContent ? { originalContent } : {}),
         });
         return `<img${attrs} data-slot="${slotId}">`;

@@ -18,6 +18,8 @@ export function TemplateUploadPanel({ onUploadSuccess }: TemplateUploadPanelProp
   const [fetchUrl, setFetchUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+
   const processHtmlAndSave = async (
     html: string,
     baseUrl: string | undefined,
@@ -29,7 +31,43 @@ export function TemplateUploadPanel({ onUploadSuccess }: TemplateUploadPanelProp
     text = resolveUrlsInHtml(text, baseUrl || undefined);
     const headContent = extractHeadContent(text);
     setStatus("Detecting content slots...");
-    const { htmlBody, slots: templateSlots } = detectSlots(text);
+    const { htmlBody, slots: rawSlots } = detectSlots(text);
+
+    // Walk elements and ensure tagName, originalContent, wordCount on every slot
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlBody, "text/html");
+    const body = doc.body || doc.documentElement;
+    const slotIdToSlot = new Map(rawSlots.map((s) => [s.id, { ...s }]));
+    const walkElements = body.querySelectorAll("h1, h2, h3, h4, h5, h6, p, ul, ol, img, a");
+    walkElements.forEach((el) => {
+      const slotId = el.getAttribute("data-slot");
+      if (!slotId || !slotIdToSlot.has(slotId)) return;
+      const slot = slotIdToSlot.get(slotId)!;
+      const tagName = el.tagName.toLowerCase();
+      let originalContent: string;
+      if (el.tagName === "IMG") {
+        originalContent = el.getAttribute("src")?.trim() || "";
+      } else if (el.tagName === "UL" || el.tagName === "OL") {
+        const items = el.querySelectorAll("li");
+        originalContent =
+          items.length > 0
+            ? Array.from(items)
+                .map((li) => li.textContent?.trim() || "")
+                .filter(Boolean)
+                .join("\n")
+            : el.textContent?.trim() || "";
+      } else {
+        originalContent = el.textContent?.trim() || "";
+      }
+      const wc = el.tagName !== "IMG" ? wordCount(originalContent) : undefined;
+      slotIdToSlot.set(slotId, {
+        ...slot,
+        tagName,
+        originalContent,
+        ...(wc != null ? { wordCount: wc } : {}),
+      });
+    });
+    const templateSlots = Array.from(slotIdToSlot.values());
 
     if (templateSlots.length === 0) {
       setError("No content slots detected. Ensure the page has headings (h1-h6), paragraphs (p), or lists.");
