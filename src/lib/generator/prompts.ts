@@ -195,7 +195,6 @@ Respond with ONLY the generated content. No explanations, no markdown formatting
 export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsRequest): string {
   const { coreNarrative, templateFields, userConfig } = request;
 
-  // Validate fields
   const validFields = templateFields.filter(
     (f): f is NonNullable<typeof f> => f != null && f.slotId != null
   );
@@ -204,8 +203,9 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     throw new Error('No valid template fields provided for narrative mapping');
   }
 
-  // Helper to estimate safe word count (assuming 6 chars per word average)
-  const getSafeWordCount = (chars: number) => Math.max(2, Math.floor(chars / 6));
+  // Helper to calculate SAFE word count from character limit
+  // We divide by 7 to be conservative (avg word length + space + punctuation)
+  const getSafeWordCount = (chars: number) => Math.max(2, Math.floor(chars / 7));
 
   const enhancedFieldDescriptions = validFields.map((field) => {
     const orig = field.originalContent || '';
@@ -213,32 +213,33 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     const maxLen = field.maxLength ?? 1000;
     const safeWords = getSafeWordCount(maxLen);
 
-    // STEP 1: INFER TYPE & SIZE CLASS
+    // STEP 1: INFER TYPE & SIZE
     let inferredType: string;
 
     // 1. Images
-    if (tag === 'img') {
-      inferredType = 'Image URL only (DO NOT write text)';
-    }
+    if (tag === 'img') inferredType = 'Image URL only';
+
     // 2. Lists
     else if (tag === 'ul' || tag === 'ol' || field.slotType === 'list') {
       const itemCount = orig.includes('\n') ? orig.split('\n').filter(Boolean).length : 0;
       inferredType = itemCount > 0 ? `List (~${itemCount} items)` : 'List (3-5 items)';
     }
-    // 3. CTA Buttons (High Priority)
+
+    // 3. CTA Buttons (Always Short)
     else if (tag === 'a' || field.slotType === 'cta') {
-      inferredType = 'CTA Button (2-5 words, Action Verb, NO periods)';
-    }
-    // 4. Headlines (Short limits)
-    else if (maxLen < 85 || field.slotType === 'headline') {
-      inferredType = `HEADLINE (Max ${safeWords} words)`;
-    }
-    // 5. PARAGRAPHS - Convert Char Limit to Word Limit
-    else {
-      inferredType = `Paragraph (STRICT TARGET: ~${safeWords} words)`;
+      inferredType = 'CTA Button (2-5 words)';
     }
 
-    // Build the description string
+    // 4. Headlines (Strict)
+    else if (field.slotType === 'headline' || maxLen < 120) {
+      inferredType = `HEADLINE (Max ${safeWords} words, NO sentences)`;
+    }
+
+    // 5. Paragraphs (Word Count constrained)
+    else {
+      inferredType = `Paragraph (Target: ~${safeWords} words)`;
+    }
+
     let desc = `- "${field.slotId}": **LIMIT ${maxLen} CHARS** → Write approx ${safeWords} words → ${inferredType}`;
 
     if (orig) {
