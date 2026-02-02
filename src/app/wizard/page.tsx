@@ -612,13 +612,14 @@ function WizardPageContent() {
     setErrorMessage(null);
     const selected = getSelectedTemplate();
     const maxLength = getSlotMaxLength(slotId, selected);
+    const effectiveType = maxLength != null && maxLength < 80 ? 'headline' : slotType;
     try {
       const response = await fetch('/api/regenerate-slot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           slotId,
-          slotType,
+          slotType: effectiveType,
           coreNarrative: data.coreNarrative,
           productName: data.productName,
           mainKeyword: data.mainKeyword,

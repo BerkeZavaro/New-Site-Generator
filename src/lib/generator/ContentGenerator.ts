@@ -585,7 +585,13 @@ export class ContentGenerator {
           .replace(/&quot;/g, '"')
           .replace(/&#039;/g, "'")
           .replace(/&nbsp;/g, ' ');
-        slots[field.slotId] = cleanedValue.trim();
+        cleanedValue = cleanedValue.trim();
+        if (field.maxLength != null && cleanedValue.length > field.maxLength) {
+          cleanedValue = cleanedValue.substring(0, field.maxLength).trim();
+          const lastSpace = cleanedValue.lastIndexOf(' ');
+          if (lastSpace > field.maxLength * 0.6) cleanedValue = cleanedValue.substring(0, lastSpace);
+        }
+        slots[field.slotId] = cleanedValue;
       }
     }
 
@@ -923,8 +929,13 @@ export class ContentGenerator {
             .replace(/&quot;/g, '"')
             .replace(/&#039;/g, "'")
             .replace(/&nbsp;/g, ' ');
-          
-          slots[field.slotId] = cleanedValue.trim();
+          cleanedValue = cleanedValue.trim();
+          if (field.maxLength != null && cleanedValue.length > field.maxLength) {
+            cleanedValue = cleanedValue.substring(0, field.maxLength).trim();
+            const lastSpace = cleanedValue.lastIndexOf(' ');
+            if (lastSpace > field.maxLength * 0.6) cleanedValue = cleanedValue.substring(0, lastSpace);
+          }
+          slots[field.slotId] = cleanedValue;
         }
       }
 
@@ -1074,6 +1085,13 @@ export class ContentGenerator {
         .replace(/&#039;/g, "'")
         .replace(/&nbsp;/g, ' ')
         .trim();
+
+      // Enforce character limit - truncate if AI exceeded it
+      if (request.maxLength != null && content.length > request.maxLength) {
+        content = content.substring(0, request.maxLength).trim();
+        const lastSpace = content.lastIndexOf(' ');
+        if (lastSpace > request.maxLength * 0.6) content = content.substring(0, lastSpace);
+      }
       
       console.log(`✅ Slot "${request.slotId}" Regenerated`);
       console.log(`Content: ${content.substring(0, 100)}...`);

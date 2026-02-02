@@ -141,12 +141,18 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
     element.setAttribute('data-slot', slotId);
 
     // 6. Register Slot
+    // maxLength/originalContent length is source of truth: short content = headline, not paragraph
     const tag = element.tagName.toLowerCase();
+    let effectiveType = type;
+    let maxLen = type !== 'image' ? deriveMaxLength(tag, originalContent, type) : undefined;
+    if (type === 'paragraph' && originalContent.length < 60) {
+      effectiveType = 'headline';
+      maxLen = deriveMaxLength(tag, originalContent, 'headline');
+    }
     const wc = type !== 'image' ? wordCount(originalContent) : undefined;
-    const maxLen = type !== 'image' ? deriveMaxLength(tag, originalContent, type) : undefined;
     slots.push({
       id: slotId,
-      type,
+      type: effectiveType,
       label,
       tagName: tag,
       originalContent: originalContent || '',
@@ -301,11 +307,16 @@ function detectSlotsRegex(htmlBody: string): DetectSlotsResult {
       } else {
         originalContent = textContent.trim();
       }
+      let effectiveType = type;
+      let maxLen = type !== 'image' ? deriveMaxLength(tagNameLower || '', originalContent, type) : undefined;
+      if (type === 'paragraph' && originalContent.length < 60) {
+        effectiveType = 'headline';
+        maxLen = deriveMaxLength(tagNameLower || '', originalContent, 'headline');
+      }
       const wc = type !== 'image' ? wordCount(originalContent) : undefined;
-      const maxLen = type !== 'image' ? deriveMaxLength(tagNameLower || '', originalContent, type) : undefined;
       slots.push({
         id: slotId,
-        type,
+        type: effectiveType,
         label,
         tagName: tagNameLower || '',
         originalContent: originalContent || '',
