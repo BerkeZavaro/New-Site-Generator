@@ -5,7 +5,8 @@
 import type { TemplateId } from "./registry";
 import type { SlotType, TemplateSlot, TemplateConfig } from "./types";
 
-// Re-export for backward compatibility
+// Re-export for backward compatibility.
+// TemplateSlot includes tagName and originalContent for strict AI structure enforcement.
 export type { SlotType, TemplateSlot };
 
 /**

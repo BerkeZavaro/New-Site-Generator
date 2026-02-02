@@ -160,8 +160,9 @@ export default function EditTemplatePage({ params }: { params: Promise<{ id: str
             : Math.min(len + 20, 500))
           : undefined;
         slots.push({
-          id, type, label, tagName,
-          ...(originalContent ? { originalContent } : {}),
+          id, type, label,
+          tagName: tagName,
+          originalContent: originalContent ?? '',
           ...(wc != null ? { wordCount: wc } : {}),
           ...(maxLen != null ? { maxLength: maxLen } : {}),
         });

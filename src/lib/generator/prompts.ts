@@ -206,26 +206,26 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
 
   const wordCountFromStr = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 
-  // Iterate through templateFields and build descriptions with strict constraints from tagName + originalContent
+  // Iterate through templateFields - SCREAM at the AI about length to prevent layout breakage
   const enhancedFieldDescriptions = validFields.map((field) => {
     let desc = `- ${field.slotId} (${field.slotType}): ${field.label}`;
     const orig = field.originalContent || '';
     const origWordCount = field.wordCount ?? wordCountFromStr(orig);
-    const preview = orig.length > 120 ? orig.substring(0, 120) + '...' : orig;
 
     if (orig) {
-      desc += `\n  Style Reference: "${preview}"`;
+      const refPreview = orig.length > 50 ? orig.substring(0, 50) + '...' : orig;
+      desc += `\n  (Ref Style: "${refPreview}")`;
     }
     if (field.description) desc += ` - ${field.description}`;
 
     const tag = (field.tagName || '').toLowerCase();
 
     if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
-      const maxChars = field.maxLength ?? orig.length + 15;
-      desc += ` [CONSTRAINT: Write a short headline. Max length: ${maxChars} characters. No periods.]`;
+      const maxChars = orig.length + 15;
+      desc += ` [CONSTRAINT: This is a HEADLINE. Max length: ${maxChars} chars. ONE LINE ONLY. NO PERIODS.]`;
     } else if (tag === 'p') {
-      const words = origWordCount > 0 ? origWordCount : 50;
-      desc += ` [CONSTRAINT: Write a paragraph approx ${words} words long.]`;
+      const words = origWordCount > 0 ? origWordCount : orig.split(/\s+/).filter(Boolean).length || 50;
+      desc += ` [CONSTRAINT: Paragraph. Approx length: ${words} words.]`;
     } else if (tag === 'ul' || tag === 'ol') {
       const itemCount = orig.includes('\n') ? orig.split('\n').filter(Boolean).length : 0;
       const range = itemCount > 0 ? ` (~${itemCount} items)` : '';
@@ -235,14 +235,14 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     } else if (tag === 'img') {
       desc += ` [CONSTRAINT: Return image URL only. No text. Use original URL or https://via.placeholder.com/400]`;
     } else if (tag === 'a') {
-      const maxChars = field.maxLength ?? Math.min(orig.length + 15, 50);
-      desc += ` [CONSTRAINT: Short CTA. Max length: ${maxChars} characters. No periods.]`;
+      const maxChars = Math.min(orig.length + 15, 50);
+      desc += ` [CONSTRAINT: Short CTA. Max length: ${maxChars} chars. ONE LINE ONLY. NO PERIODS.]`;
     } else if (field.slotType === 'list') {
       desc += ` [CONSTRAINT: List format - one item per line. Each line = one concise list item.]`;
     } else if (field.slotType === 'cta') {
-      desc += ` [CONSTRAINT: Short CTA. Max length: 50 characters. No periods.]`;
+      desc += ` [CONSTRAINT: Short CTA. Max length: 50 chars. ONE LINE ONLY. NO PERIODS.]`;
     } else {
-      desc += ` [CONSTRAINT: Match the length and style of the Style Reference.]`;
+      desc += ` [CONSTRAINT: Match the length and style of the Ref Style above.]`;
     }
 
     return desc;
@@ -252,17 +252,18 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
   const originalContentInstruction = hasOriginalContent
     ? `
 
-**STYLE REFERENCE:**
-Each slot shows a "Style Reference" - the original scraped content. Your output MUST:
-- Mimic the length: use the character/word limits in each [CONSTRAINT].
-- Mimic the capitalization: If the Style Reference is Title Case, output Title Case. If lowercase, output lowercase. If ALL-CAPS, output ALL-CAPS. If it ends with ?, output a question.
+**LENGTH & STYLE - DO NOT IGNORE:**
+Each slot shows "(Ref Style: ...)" and a [CONSTRAINT]. VIOLATING THESE BREAKS THE LAYOUT.
+- HEADLINES (H1-H6): MAX LENGTH IS STRICT. ONE LINE. NO PERIODS. Do NOT write paragraphs in headline slots.
+- PARAGRAPHS (P): Match the approx word count. Full sentences.
+- Match capitalization: Title Case → Title Case. lowercase → lowercase. ALL-CAPS → ALL-CAPS. Question? → Question.
 - Do NOT output HTML tags.`
     : '';
 
   const tagNameInstruction = validFields.some(f => f.tagName) ? `
 
-**TAG RULES (CRITICAL):**
-Respect each slot's structure: Headlines (h1-h6) = short only. Paragraphs (p) = full sentences. Lists = one item per line. Never swap structures.` : '';
+**TAG RULES - CRITICAL:**
+HEADLINES = ONE SHORT LINE. PARAGRAPHS = MULTIPLE SENTENCES. Never swap. Exceeding headline length destroys the design.` : '';
 
   const prompt = `You are a professional copywriter. Your task is to extract and distribute content from a Core Narrative into specific template slots while PRESERVING THE EXACT STRUCTURE of the original template.
 ${tagNameInstruction}
@@ -290,7 +291,7 @@ ${userConfig.targetStates && userConfig.targetStates.length > 0
 **CRITICAL REQUIREMENTS - READ CAREFULLY:**
 1. **YOU MUST INCLUDE ALL ${validFields.length} SLOTS IN YOUR RESPONSE - NO EXCEPTIONS.** Every single slot ID listed above MUST appear as a key in your JSON response. Missing even ONE slot will cause the system to fail. Count your keys before responding - you must have exactly ${validFields.length} keys.
 2. Extract content from the Core Narrative for each field. Do NOT create new content that isn't in the narrative.
-3. **MATCH STYLE REFERENCE:** When a slot shows "Style Reference", match its length and capitalization. If the reference is 3 words, generate ~3 words—NOT a long sentence. This prevents layout breakage.
+3. **STRICT LENGTH - HEADLINES:** When [CONSTRAINT] says "This is a HEADLINE. Max length: X chars", you MUST stay under X characters. ONE LINE. NO PERIODS. Writing a paragraph in a headline slot BREAKS THE LAYOUT. Match the Ref Style tone/capitalization.
 4. PRESERVE STRUCTURE: If a slot is labeled as "Headline" or "H1", it should be ONE LINE only. If it's "Paragraph" or "Body", it should be a full paragraph.
 5. For headings (H1, H2, H3, etc.), extract or create a SINGLE LINE that captures the essence. Do NOT include paragraph text in headings.
 6. For paragraphs, extract or adapt full paragraph content with multiple sentences.

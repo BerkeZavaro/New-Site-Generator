@@ -149,7 +149,7 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
       type,
       label,
       tagName: tag,
-      ...(originalContent ? { originalContent } : {}),
+      originalContent: originalContent || '',
       ...(wc != null ? { wordCount: wc } : {}),
       ...(maxLen != null ? { maxLength: maxLen } : {}),
     });
@@ -307,8 +307,8 @@ function detectSlotsRegex(htmlBody: string): DetectSlotsResult {
         id: slotId,
         type,
         label,
-        tagName: tagNameLower || undefined,
-        ...(originalContent ? { originalContent } : {}),
+        tagName: tagNameLower || '',
+        originalContent: originalContent || '',
         ...(wc != null ? { wordCount: wc } : {}),
         ...(maxLen != null ? { maxLength: maxLen } : {}),
       });
@@ -330,7 +330,7 @@ function detectSlotsRegex(htmlBody: string): DetectSlotsResult {
           type: 'image',
           label,
           tagName: 'img',
-          ...(originalContent ? { originalContent } : {}),
+          originalContent: originalContent || '',
         });
         return `<img${attrs} data-slot="${slotId}">`;
       });
