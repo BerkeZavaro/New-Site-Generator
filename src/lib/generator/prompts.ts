@@ -195,7 +195,7 @@ Respond with ONLY the generated content. No explanations, no markdown formatting
 export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsRequest): string {
   const { coreNarrative, templateFields, userConfig } = request;
 
-  // Validate and filter out any undefined/null fields
+  // Validate fields
   const validFields = templateFields.filter(
     (f): f is NonNullable<typeof f> => f != null && f.slotId != null
   );
@@ -204,138 +204,82 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     throw new Error('No valid template fields provided for narrative mapping');
   }
 
-  const wordCountFromStr = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+  // Helper to estimate safe word count (assuming 6 chars per word average)
+  const getSafeWordCount = (chars: number) => Math.max(2, Math.floor(chars / 6));
 
-  // Put CHARACTER LIMIT FIRST - the AI must check limit before filling
   const enhancedFieldDescriptions = validFields.map((field) => {
     const orig = field.originalContent || '';
-    const origWordCount = field.wordCount ?? wordCountFromStr(orig);
     const tag = (field.tagName || '').toLowerCase();
     const maxLen = field.maxLength ?? 1000;
+    const safeWords = getSafeWordCount(maxLen);
 
-    // STEP 1: LIMIT FIRST - this determines what to write
+    // STEP 1: INFER TYPE & SIZE CLASS
     let inferredType: string;
-    if (maxLen < 80) {
-      inferredType = 'HEADLINE (one short line, no periods)';
-    } else if (tag === 'ul' || tag === 'ol' || field.slotType === 'list') {
+
+    // 1. Images
+    if (tag === 'img') {
+      inferredType = 'Image URL only (DO NOT write text)';
+    }
+    // 2. Lists
+    else if (tag === 'ul' || tag === 'ol' || field.slotType === 'list') {
       const itemCount = orig.includes('\n') ? orig.split('\n').filter(Boolean).length : 0;
-      inferredType = itemCount > 0 ? `List (~${itemCount} items, one per line)` : 'List (one item per line)';
-    } else if (tag === 'li') {
-      inferredType = 'Single list item';
-    } else if (tag === 'img') {
-      inferredType = 'Image URL only';
-    } else if ((tag === 'a' || field.slotType === 'cta') && maxLen < 80) {
-      inferredType = 'Short CTA (one line, no periods)';
-    } else {
-      inferredType = `Paragraph (~${origWordCount || Math.floor(maxLen / 6)} words)`;
+      inferredType = itemCount > 0 ? `List (~${itemCount} items)` : 'List (3-5 items)';
+    }
+    // 3. CTA Buttons (High Priority)
+    else if (tag === 'a' || field.slotType === 'cta') {
+      inferredType = 'CTA Button (2-5 words, Action Verb, NO periods)';
+    }
+    // 4. Headlines (Short limits)
+    else if (maxLen < 85 || field.slotType === 'headline') {
+      inferredType = `HEADLINE (Max ${safeWords} words)`;
+    }
+    // 5. PARAGRAPHS - Convert Char Limit to Word Limit
+    else {
+      inferredType = `Paragraph (STRICT TARGET: ~${safeWords} words)`;
     }
 
-    let desc = `- "${field.slotId}": **MAX ${maxLen} CHARACTERS** → ${inferredType} → ${field.label}`;
+    // Build the description string
+    let desc = `- "${field.slotId}": **LIMIT ${maxLen} CHARS** → Write approx ${safeWords} words → ${inferredType}`;
+
     if (orig) {
       const refPreview = orig.length > 50 ? orig.substring(0, 50) + '...' : orig;
-      desc += `\n  (Ref Style: "${refPreview}")`;
+      desc += `\n  (Ref: "${refPreview}")`;
     }
     return desc;
   }).join('\n');
 
   const prompt = `You are a professional copywriter. Your task is to fill template slots from a Core Narrative.
 
-**YOUR PROCESS - FOLLOW THIS ORDER FOR EVERY SLOT:**
-1. **FIRST** look at the character limit (MAX X CHARACTERS).
-2. **THEN** infer the slot type from the limit: limit < 80 = headline; limit >= 80 = paragraph or list.
-3. **THEN** write content that fits within that limit. Count your characters. Stay under.
-
-Do NOT write a paragraph for a 36-character slot. A 36-character slot is a headline—write "Information About NMN", not a 451-character essay. Exceeding the limit breaks the layout.
+**THE GOLDEN RULE: LENGTH IS MORE IMPORTANT THAN CONTENT.**
+The system will crash if you write too much. You MUST respect the "Write approx X words" instruction.
+- If it says "~10 words", do NOT write 20.
+- If it says "~50 words", do NOT write 100.
+- It is better to be too short than too long.
 
 **Core Narrative (Source of Truth):**
 ${coreNarrative}
 
-**Template Fields to Fill (with structure requirements):**
+**Template Fields to Fill:**
 ${enhancedFieldDescriptions}
 
-**IMPORTANT: You must provide content for ALL ${validFields.length} slots listed above.**
-- Text slots (headings, paragraphs) = extract text content
-- List slots = extract 3-8 key points, one per line
-- Content blocks = extract multiple sentences
-- **DO NOT skip any slots, especially lists or content blocks**
-
-**Target Audience:** ${userConfig.ageRange || 'all'} ${userConfig.gender || 'all'}${userConfig.country ? ` in ${userConfig.country}` : ''}${userConfig.targetStates && userConfig.targetStates.length > 0 ? ` (psychographic profile: ${userConfig.targetStates.join(', ')})` : ''}
+**Target Audience:** ${userConfig.ageRange || 'all'} ${userConfig.gender || 'all'}${userConfig.country ? ` in ${userConfig.country}` : ''}
 **Tone:** ${userConfig.tone}
-**Main Keyword:** ${userConfig.mainKeyword}
-${userConfig.targetStates && userConfig.targetStates.length > 0 
-  ? `\n**Psychographic Targeting:** Adapt tone, metaphors, and priorities to match the cultural mindset and values typical of ${userConfig.targetStates.length === 1 ? userConfig.targetStates[0] : userConfig.targetStates.join(', ')}. DO NOT mention city names, landmarks, or state names. Focus on values and mindset, not geography.`
-  : ''}
 
-**CRITICAL REQUIREMENTS - READ CAREFULLY:**
-1. **YOU MUST INCLUDE ALL ${validFields.length} SLOTS IN YOUR RESPONSE - NO EXCEPTIONS.** Every single slot ID listed above MUST appear as a key in your JSON response. Missing even ONE slot will cause the system to fail. Count your keys before responding - you must have exactly ${validFields.length} keys.
-2. Extract content from the Core Narrative for each field. Do NOT create new content that isn't in the narrative.
-3. **ALWAYS OBEY CHARACTER LIMITS - NO EXCEPTIONS:** Every slot has [STRICT LIMIT: Must be under X characters]. Headline, paragraph, list, CTA—you MUST stay under X for every single slot. No matter the type. Exceeding the limit crashes the system.
-4. PRESERVE STRUCTURE: If a slot is labeled as "Headline" or "H1", it should be ONE LINE only. If it's "Paragraph" or "Body", it should be a full paragraph.
-5. For headings (H1, H2, H3, etc.), extract or create a SINGLE LINE that captures the essence. Do NOT include paragraph text in headings.
-6. For paragraphs, extract or adapt full paragraph content with multiple sentences.
-7. **FOR LISTS (type: list, slot IDs containing "list"):** 
-   - **THIS IS CRITICAL - LIST SLOTS ARE OFTEN MISSED BUT ARE REQUIRED**
-   - Extract 3-8 key points from the narrative
-   - Format as one item per line (each line is a bullet point, separated by newlines)
-   - Each line should be a complete sentence or phrase
-   - Example format (note the newlines between items):
-     "Key benefit 1 from narrative\nKey benefit 2 from narrative\nKey benefit 3 from narrative"
-   - If the narrative doesn't have enough list items, extract and adapt related points from the narrative
-   - **DO NOT SKIP LIST SLOTS - THEY ARE MANDATORY AND WILL CAUSE ERRORS IF MISSING**
-   - Look for ALL slots with "list" in their ID or type - include every single one
-8. **For content blocks:** Extract the main content from the narrative that fits that section. This can be multiple sentences or paragraphs combined. **DO NOT skip content blocks - they are required**
-9. Maintain consistency - all fields should align with the same narrative thread.
-10. **ALWAYS obey the character limit** for every slot. No exceptions.
-11. Use the exact slot IDs as JSON keys (e.g. "money_back_guarantee" NOT "Money Back Guarantee"). **DO NOT use human-readable labels or skip any slots.**
-12. **CRITICAL: DO NOT include HTML tags in your response.** Return ONLY plain text content. The template already has the HTML structure (H1, H2, P, UL, OL tags). You should provide just the text that goes inside those tags. For example, return "My Heading Text" NOT "<h1>My Heading Text</h1>".
-13. **VERIFICATION STEP: Before submitting, count the number of keys in your JSON. It MUST equal ${validFields.length}. If it doesn't, you're missing slots - go back and add them.**
+**CRITICAL REQUIREMENTS:**
+1. **INCLUDE ALL ${validFields.length} SLOTS.** Missing a slot = System Failure.
+2. **OBEY WORD COUNTS:** The "approx X words" is a HARD LIMIT. Do not exceed it.
+3. **Headlines:** One line, no periods.
+4. **CTAs:** Action-oriented, very short.
+5. **No HTML:** Plain text only.
 
 **Response Format:**
-You MUST respond with ONLY valid JSON in this exact format (no markdown, no code blocks, no explanations). **INCLUDE ALL ${validFields.length} SLOTS - DO NOT SKIP ANY:**
+Return ONLY valid JSON.
 
 {
-${validFields.length > 0 ? `  "${validFields[0].slotId}": "extracted content for first field"` : ''}${validFields.length > 1 ? `,\n  "${validFields[1].slotId}": "extracted content for second field"` : ''}${validFields.length > 2 ? `,\n  "${validFields[2].slotId}": "extracted content for third field"` : ''}${validFields.length > 3 ? `,\n  ...` : ''}${validFields.length > 1 ? `,\n  "${validFields[validFields.length - 1].slotId}": "extracted content for last field"` : ''}
+${validFields.length > 0 ? `  "${validFields[0].slotId}": "content..."` : ''}${validFields.length > 1 ? `,\n  "${validFields[1].slotId}": "content..."` : ''}
+  ...
 }
-
-**CRITICAL: VERIFICATION CHECKLIST:**
-1. Every slot value is UNDER its character limit - check [STRICT LIMIT] for each slot.
-2. Count the keys in your JSON response - you must have exactly ${validFields.length} keys
-3. Every slot ID from the list above must appear as a key in your JSON
-4. For list slots, provide multiple lines (one item per line)
-5. For content blocks, provide substantial content (multiple sentences)
-6. If a slot seems difficult, extract the most relevant content from the narrative - DO NOT skip it
-
-**REQUIRED SLOT IDs - YOU MUST INCLUDE ALL OF THESE IN YOUR JSON RESPONSE:**
-${validFields.map((f, i) => {
-  const isList = f.slotType === 'list';
-  const isContentBlock = f.label.toLowerCase().includes('content block');
-  const marker = (isList || isContentBlock) ? ' ⚠️ MANDATORY - DO NOT SKIP' : '';
-  return `${i + 1}. "${f.slotId}" (${f.slotType}): ${f.label}${marker}`;
-}).join('\n')}
-
-**COMPLETE LIST OF REQUIRED SLOT IDs (copy these exactly into your JSON):**
-${validFields.map(f => `"${f.slotId}"`).join(', ')}
-
-**REMINDER: Your JSON response must contain ALL ${validFields.length} of these slot IDs as keys. Missing any slot will cause an error.**
-
-**BEFORE SUBMITTING YOUR RESPONSE - MANDATORY CHECKLIST:**
-1. Every slot value MUST be under its character limit - exceeding limits crashes the system.
-2. Count the keys in your JSON response - you MUST have exactly ${validFields.length} keys (no more, no less)
-3. Verify that EVERY slot ID from the "REQUIRED SLOT IDs" list above appears as a key in your JSON
-4. **SPECIAL ATTENTION: Check for ALL list slots** - look for any slot ID containing "list" (like "section_list_0", "section_list_1", etc.) and ensure they are ALL included
-5. **SPECIAL ATTENTION: Check for ALL content blocks** - ensure all content block slots are included
-6. If you find ANY missing slots, STOP and add them before submitting - DO NOT submit incomplete responses
-7. Double-check that your JSON is valid and can be parsed - test it mentally or write it out to verify
-8. **FINAL CHECK: Your JSON must have ${validFields.length} keys. Count them now before submitting.**
-
-Each value should be a string containing ONLY plain text content (no HTML tags). 
-- Headlines = ONE LINE
-- Paragraphs = FULL PARAGRAPHS  
-- Lists = ONE ITEM PER LINE (each line is a bullet point, use newlines to separate items)
-- Content Blocks = MULTIPLE SENTENCES OR PARAGRAPHS
-- NO HTML TAGS
-
-**FINAL REMINDER:** (1) Return JSON with exactly ${validFields.length} keys. (2) **ALWAYS obey the character limit for every slot**—headline, paragraph, list, or otherwise. Count characters. Stay under the limit.`;
+`;
 
   return prompt;
 }

@@ -38,6 +38,7 @@ export function getTemplateFields(template: TemplateConfig): TemplateFieldDefini
 
 function slotToField(slot: TemplateSlot): TemplateFieldDefinition {
   let slotType = mapSlotType(slot.type || 'paragraph');
+  const contentLen = (slot.originalContent || '').length;
   let maxLength = slot.maxLength ?? getSmartMaxLength(slot);
   if (maxLength == null) {
     if (slotType === 'headline') maxLength = 100;
@@ -45,10 +46,10 @@ function slotToField(slot: TemplateSlot): TemplateFieldDefinition {
     else if (slotType === 'paragraph') maxLength = 1000;
     else maxLength = 500;
   }
-  // maxLength is the source of truth: small limit = HEADLINE, not paragraph
-  if (maxLength < 80 && slotType === 'paragraph') {
+  // FORCE CORRECTION: If text is short, it MUST be a headline, even if labeled paragraph
+  if (slotType === 'paragraph' && (maxLength < 80 || (contentLen > 0 && contentLen < 60))) {
     slotType = 'headline';
-    maxLength = Math.min((slot.originalContent || '').length + 15, 80);
+    maxLength = Math.min(contentLen + 20, 80);
   }
   return {
     slotId: slot.id,
