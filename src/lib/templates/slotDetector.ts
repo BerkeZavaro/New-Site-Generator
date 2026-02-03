@@ -1,6 +1,7 @@
 /**
- * Slot Detection Utility - FIXED & ROBUST
- * Automatically detects editable content slots and assigns granular types.
+ * Slot Detection Utility - TEXT ONLY MODE
+ * Automatically detects editable TEXT slots (Headlines, Paragraphs, Lists).
+ * Ignores Images, Buttons, and Links to preserve layout stability.
  */
 
 import type { TemplateSlot, SlotType } from './types';
@@ -29,7 +30,6 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
       serializer = new XMLSerializer();
     }
   } catch (error) {
-    // Fallback to regex if DOMParser fails (Node.js/Server)
     return detectSlotsRegex(htmlBody);
   }
 
@@ -43,121 +43,106 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
 
   /**
    * Helper: Check if element is inside an ignored structural element
-   * Returns true if the element or any parent matches ignored tags/classes/IDs
    */
   function isInsideIgnoredElement(element: Element): boolean {
-    const ignoredTags = ['nav', 'footer', 'header', 'script', 'style', 'svg'];
-    const ignoredPatterns = ['menu', 'nav', 'footer', 'popup', 'hidden', 'sidebar', 'cookie'];
-    
+    const ignoredTags = ['nav', 'footer', 'header', 'script', 'style', 'svg', 'form', 'button'];
+    const ignoredPatterns = ['menu', 'nav', 'footer', 'popup', 'hidden', 'sidebar', 'cookie', 'copyright'];
+
     let current: Element | null = element;
-    
+
     while (current && current !== body) {
-      // Check tag name
       const tagName = current.tagName.toLowerCase();
-      if (ignoredTags.includes(tagName)) {
-        return true;
-      }
-      
-      // Check classes and IDs
+      if (ignoredTags.includes(tagName)) return true;
+
       const classAttr = current.getAttribute('class') || '';
       const idAttr = current.getAttribute('id') || '';
       const combined = `${classAttr} ${idAttr}`.toLowerCase();
-      
-      if (ignoredPatterns.some(pattern => combined.includes(pattern))) {
-        return true;
-      }
-      
-      // Move up to parent
+
+      if (ignoredPatterns.some(pattern => combined.includes(pattern))) return true;
+
       current = current.parentElement;
     }
-    
     return false;
   }
 
   /**
    * Helper: Determine the specific SlotType based on the HTML tag
+   * STRICTLY TEXT ONLY: No Images, No CTAs.
    */
-  function getSlotType(tagName: string, element: Element): SlotType | null {
+  function getSlotType(tagName: string): SlotType | null {
     const tag = tagName.toLowerCase();
-    
+
     if (tag === 'h1' || tag === 'h2') return 'headline';
     if (['h3', 'h4', 'h5', 'h6'].includes(tag)) return 'subheadline';
     if (tag === 'p') return 'paragraph';
     if (tag === 'ul' || tag === 'ol') return 'list';
-    if (tag === 'img') return 'image';
-    
-    // For links, only treat them as slots if they look like buttons/CTAs or nav items
-    // (ignoring empty links or anchors)
-    if (tag === 'a') {
-      const href = element.getAttribute('href');
-      const text = element.textContent?.trim();
-      if (href && text && text.length > 0) {
-        return 'cta';
-      }
-    }
-    
+
+    // Explicitly ignore IMG and A tags now
     return null;
   }
 
-  /**
-   * Process all relevant elements in the DOM
-   */
-  const allElements = body.querySelectorAll('h1, h2, h3, h4, h5, h6, p, ul, ol, img, a');
-  
+  // SELECT ONLY TEXT ELEMENTS
+  const allElements = body.querySelectorAll('h1, h2, h3, h4, h5, h6, p, ul, ol');
+
   allElements.forEach((element) => {
-    // 0. Skip if inside ignored structural elements (nav, footer, header, etc.)
     if (isInsideIgnoredElement(element)) return;
-    
-    // 1. Determine Type
-    const type = getSlotType(element.tagName, element);
+
+    const type = getSlotType(element.tagName);
     if (!type) return;
 
-    // 2. Skip if already processed
     if (element.hasAttribute('data-slot')) return;
-    
-    // Skip tiny text (unless it's a heading or image)
+
     const text = element.textContent?.trim() || '';
-    if (type === 'paragraph' && text.length < 10) return; 
-    if (type === 'cta' && text.length < 2) return;
+    // Skip empty or tiny text fragments
+    if (text.length < 5) return;
 
-    // 3. Generate ID
-    const slotId = generateSlotId(element, type, text, slots);
-    const label = generateLabel(slotId);
+    // Generate ID
+    const baseId = text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .substring(0, 35) || `${type}_${slots.length}`;
 
-    // 4. Capture original content (textContent for text, src for images)
-    let originalContent: string;
-    if (type === 'image') {
-      originalContent = (element.getAttribute('src') || '').trim();
-    } else if (type === 'list') {
+    let slotId = baseId;
+    let counter = 1;
+    while (slots.some(s => s.id === slotId)) {
+      slotId = `${baseId}_${counter}`;
+      counter++;
+    }
+
+    const label = slotId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+    // Capture original content
+    let originalContent = text;
+    if (type === 'list') {
       const items = element.querySelectorAll('li');
       originalContent = items.length > 0
         ? Array.from(items).map(li => li.textContent?.trim() || '').filter(Boolean).join('\n')
         : text;
-    } else {
-      originalContent = text;
     }
 
-    // 5. Mark the DOM
     element.setAttribute('data-slot', slotId);
 
-    // 6. Register Slot
-    // maxLength/originalContent length is source of truth: short content = headline, not paragraph
+    // LOGIC: Short text = Headline (even if <p>)
     const tag = element.tagName.toLowerCase();
     let effectiveType = type;
-    let maxLen = type !== 'image' ? deriveMaxLength(tag, originalContent, type) : undefined;
-    if (type === 'paragraph' && originalContent.length < 60) {
+    let maxLen = deriveMaxLength(tag, originalContent, type);
+
+    // Aggressive Headline Detection: If it's short, it's a headline.
+    if (type === 'paragraph' && originalContent.length < 100) {
       effectiveType = 'headline';
-      maxLen = deriveMaxLength(tag, originalContent, 'headline');
+      maxLen = Math.min(originalContent.length + 20, 100);
     }
-    const wc = type !== 'image' ? wordCount(originalContent) : undefined;
+
+    const wc = wordCount(originalContent);
     slots.push({
       id: slotId,
       type: effectiveType,
       label,
       tagName: tag,
-      originalContent: originalContent || '',
-      ...(wc != null ? { wordCount: wc } : {}),
-      ...(maxLen != null ? { maxLength: maxLen } : {}),
+      originalContent: originalContent,
+      wordCount: wc,
+      maxLength: maxLen,
     });
     slotCounter++;
   });
@@ -166,186 +151,73 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
   let updatedHtmlBody: string;
   if (serializer) {
     updatedHtmlBody = serializer.serializeToString(body);
-    // Remove the <body> tags wrapper
     updatedHtmlBody = updatedHtmlBody.replace(/^<body[^>]*>|<\/body>$/gi, '');
   } else {
-    const bodyElement = body as HTMLElement;
-    if ('innerHTML' in bodyElement && bodyElement.innerHTML) {
-      updatedHtmlBody = bodyElement.innerHTML || htmlBody;
-    } else if ('children' in bodyElement && bodyElement.children) {
-      // Fallback: reconstruct from elements
-      updatedHtmlBody = Array.from(bodyElement.children)
-        .map((child) => (child as HTMLElement).outerHTML || '')
-        .join('\n');
-    } else {
-      updatedHtmlBody = htmlBody;
-    }
+    updatedHtmlBody = (body as HTMLElement).innerHTML || htmlBody;
   }
 
-  return {
-    htmlBody: updatedHtmlBody,
-    slots,
-  };
+  return { htmlBody: updatedHtmlBody, slots };
 }
 
-/**
- * Generate a unique, readable ID
- */
-function generateSlotId(element: Element, type: SlotType, text: string, existingSlots: TemplateSlot[]): string {
-  // Try to make a semantic ID from content (e.g., "how_to_find_quality")
-  let baseId = '';
-  
-  if (text) {
-    baseId = text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '') // trim underscores
-      .substring(0, 35); // keep it reasonable length
-  } else if (type === 'image') {
-    const alt = element.getAttribute('alt');
-    if (alt) {
-      baseId = alt.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 35);
-    }
-  }
-
-  // Fallback if no text content (e.g. image with no alt)
-  if (!baseId || baseId.length < 3) {
-    baseId = `${type}_${existingSlots.length}`;
-  }
-
-  // Ensure uniqueness
-  let slotId = baseId;
-  let counter = 1;
-  while (existingSlots.some(s => s.id === slotId)) {
-    slotId = `${baseId}_${counter}`;
-    counter++;
-  }
-
-  return slotId;
-}
-
-function generateLabel(slotId: string): string {
-  return slotId
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-/** Word count for originalContent - used for strict AI length enforcement */
 function wordCount(s: string): number {
   return s.trim().split(/\s+/).filter(Boolean).length;
 }
 
-/** Derive maxLength (chars) from tag and originalContent - prevents paragraphs in headlines */
 function deriveMaxLength(tag: string, originalContent: string, type: SlotType): number {
   const len = originalContent.length;
-  const words = wordCount(originalContent);
   const t = tag.toLowerCase();
-  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(t)) return Math.min(len + 15, 80);
-  if (t === 'a' || type === 'cta') return Math.min(len + 15, 50);
-  if (t === 'p' || type === 'paragraph') return Math.min(Math.ceil(len * 1.2), 800);
-  if (t === 'ul' || t === 'ol' || type === 'list') return Math.min(Math.ceil(len * 1.2), 800);
-  if (t === 'li') return Math.ceil(len * 1.15);
-  return Math.min(len + 20, 500);
+
+  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(t)) return Math.min(len + 15, 100);
+  if (t === 'li') return Math.ceil(len * 1.2);
+
+  // For paragraphs/lists, be strict relative to original size
+  return Math.min(Math.ceil(len * 1.2), 1200);
 }
 
-/**
- * Fallback regex-based detection (for Node.js environment without DOM)
- */
+// Minimal Regex Fallback (Server-side)
 function detectSlotsRegex(htmlBody: string): DetectSlotsResult {
+  // Simplified for text-only
   const slots: TemplateSlot[] = [];
   let updatedHtml = htmlBody;
-  
-  // Regex patterns for our granular types
+
+  // Only text patterns
   const patterns = [
     { tag: '(h[1-2])', type: 'headline' as SlotType },
     { tag: '(h[3-6])', type: 'subheadline' as SlotType },
     { tag: '(p)', type: 'paragraph' as SlotType },
     { tag: '(ul|ol)', type: 'list' as SlotType },
-    { tag: '(a)', type: 'cta' as SlotType },
-    { tag: 'img', type: 'image' as SlotType },
   ];
 
   patterns.forEach(({ tag, type }) => {
-    // Match opening tag + content + closing tag (simplified)
-    // Note: This regex is basic and relies on standard HTML formatting
     const regex = new RegExp(`<(${tag})([^>]*)>([\\s\\S]*?)<\\/\\1>`, 'gi');
-    
     updatedHtml = updatedHtml.replace(regex, (match, tagName, attrs, content) => {
-      // Skip if already has slot
       if (attrs.includes('data-slot')) return match;
 
-      // Basic noise filter for regex
-      const textContent = content.replace(/<[^>]*>/g, '').trim();
-      if (type === 'paragraph' && textContent.length < 10) return match;
-      if (type === 'cta' && textContent.length < 2) return match;
+      const text = content.replace(/<[^>]*>/g, '').trim();
+      if (text.length < 5) return match;
 
-      // Generate ID
-      const baseId = textContent
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .substring(0, 35) || `${type}_${slots.length}`;
-
+      const baseId = text.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 35) || `${type}_${slots.length}`;
       let slotId = baseId;
       let counter = 1;
-      while (slots.some(s => s.id === slotId)) {
-        slotId = `${baseId}_${counter}`;
-        counter++;
+      while (slots.some(s => s.id === slotId)) { slotId = `${baseId}_${counter}`; counter++; }
+
+      let effectiveType = type;
+      let maxLen = deriveMaxLength(tagName, text, type);
+      if (type === 'paragraph' && text.length < 100) {
+        effectiveType = 'headline';
+        maxLen = Math.min(text.length + 20, 100);
       }
 
-      const label = generateLabel(slotId);
-      const tagNameLower = (tagName || '').toString().toLowerCase();
-      let originalContent: string;
-      if (type === 'image') {
-        originalContent = (attrs.match(/src=["']([^"']*)["']/i)?.[1] || '').trim();
-      } else if (type === 'list' && (tagNameLower === 'ul' || tagNameLower === 'ol')) {
-        const liMatches = content.match(/<li[^>]*>([\s\S]*?)<\/li>/gi) || [];
-        originalContent = liMatches
-          .map((m: string) => m.replace(/<li[^>]*>([\s\S]*?)<\/li>/i, '$1').replace(/<[^>]*>/g, '').trim())
-          .filter(Boolean)
-          .join('\n') || textContent.trim();
-      } else {
-        originalContent = textContent.trim();
-      }
-      let effectiveType = type;
-      let maxLen = type !== 'image' ? deriveMaxLength(tagNameLower || '', originalContent, type) : undefined;
-      if (type === 'paragraph' && originalContent.length < 60) {
-        effectiveType = 'headline';
-        maxLen = deriveMaxLength(tagNameLower || '', originalContent, 'headline');
-      }
-      const wc = type !== 'image' ? wordCount(originalContent) : undefined;
       slots.push({
         id: slotId,
         type: effectiveType,
-        label,
-        tagName: tagNameLower || '',
-        originalContent: originalContent || '',
-        ...(wc != null ? { wordCount: wc } : {}),
-        ...(maxLen != null ? { maxLength: maxLen } : {}),
+        label: slotId,
+        tagName: tagName,
+        originalContent: text,
+        maxLength: maxLen
       });
-
-      // Add data-slot attribute
       return `<${tagName}${attrs} data-slot="${slotId}">${content}</${tagName}>`;
     });
-    
-    // Handle self-closing images separately
-    if (tag === 'img') {
-       updatedHtml = updatedHtml.replace(/<img([^>]*)>/gi, (match, attrs) => {
-        if (attrs.includes('data-slot')) return match;
-        const slotId = `image_${slots.length}`;
-        const label = generateLabel(slotId);
-        const srcMatch = attrs.match(/src=["']([^"']*)["']/i);
-        const originalContent = srcMatch?.[1]?.trim() || '';
-        slots.push({
-          id: slotId,
-          type: 'image',
-          label,
-          tagName: 'img',
-          originalContent: originalContent || '',
-        });
-        return `<img${attrs} data-slot="${slotId}">`;
-      });
-    }
   });
 
   return { htmlBody: updatedHtml, slots };

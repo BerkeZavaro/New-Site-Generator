@@ -9,6 +9,7 @@ import type { TemplateConfig, TemplateSlot } from '@/lib/templates/types';
 
 /**
  * Map uploaded template slot type to our SlotType.
+ * SIMPLIFIED: No CTAs, No Images.
  */
 function mapSlotType(uploadedType: string): TemplateFieldDefinition['slotType'] {
   const typeMap: Record<string, TemplateFieldDefinition['slotType']> = {
@@ -17,10 +18,11 @@ function mapSlotType(uploadedType: string): TemplateFieldDefinition['slotType'] 
     subheadline: 'subheadline',
     paragraph: 'paragraph',
     list: 'list',
-    cta: 'cta',
-    image: 'paragraph',
-    url: 'cta',
     'rich-text': 'paragraph',
+    // Map legacy/ignored types to paragraph or headline just in case
+    cta: 'headline',
+    image: 'paragraph',
+    url: 'headline',
   };
   return typeMap[uploadedType] || 'paragraph';
 }
@@ -32,7 +34,12 @@ function mapSlotType(uploadedType: string): TemplateFieldDefinition['slotType'] 
 export function getTemplateFields(template: TemplateConfig): TemplateFieldDefinition[] {
   if (!template?.slots?.length) return [];
   return template.slots
-    .filter((s): s is NonNullable<typeof s> => s != null && s.id != null && s.type !== 'image')
+    .filter((s): s is NonNullable<typeof s> =>
+      s != null &&
+      s.id != null &&
+      s.type !== 'image' &&
+      s.type !== 'cta'
+    )
     .map(slot => slotToField(slot));
 }
 
@@ -46,18 +53,15 @@ function slotToField(slot: TemplateSlot): TemplateFieldDefinition {
   if (maxLength == null) {
     if (slotType === 'headline') maxLength = 80;
     else if (slotType === 'list') maxLength = 800;
-    else if (slotType === 'paragraph') maxLength = 1000;
     else maxLength = 500;
   }
 
   // 2. AGGRESSIVE CORRECTION:
-  // If the original text was short (< 120 chars), force this to be a Headline.
-  // This prevents "Information About NMN" (21 chars) from becoming a paragraph.
+  // Force short text (< 120 chars) to be Headlines.
   if (contentLen > 0 && contentLen < 120) {
     slotType = 'headline';
-    maxLength = Math.min(contentLen + 25, 120);
+    maxLength = Math.min(contentLen + 20, 120);
   } else if (maxLength < 120) {
-    // If the calculated max length is small, force type to headline
     slotType = 'headline';
   }
 
@@ -77,7 +81,6 @@ function getSmartMaxLength(slot: TemplateSlot): number | undefined {
   const tag = (slot.tagName || '').toLowerCase();
   const len = (slot.originalContent || '').length;
   if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) return len + 15;
-  if (tag === 'p') return len + 50;
   return undefined;
 }
 
@@ -183,6 +186,8 @@ export function getUploadedTemplateFields(
   slots: TemplateSlot[]
 ): TemplateFieldDefinition[] {
   return slots
-    .filter((s): s is NonNullable<typeof s> => s != null && s.id != null && s.type !== 'image')
+    .filter((s): s is NonNullable<typeof s> =>
+      s != null && s.id != null && s.type !== 'image' && s.type !== 'cta'
+    )
     .map(slot => slotToField(slot));
 }

@@ -190,7 +190,7 @@ Respond with ONLY the generated content. No explanations, no markdown formatting
 
 /**
  * Build the prompt for mapping core narrative to template slots.
- * This distributes the narrative content across all defined slots in a single operation.
+ * TEXT ONLY: Headlines, Paragraphs, Lists. No Images or CTAs.
  */
 export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsRequest): string {
   const { coreNarrative, templateFields, userConfig } = request;
@@ -203,8 +203,7 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     throw new Error('No valid template fields provided for narrative mapping');
   }
 
-  // Helper to calculate SAFE word count from character limit
-  // We divide by 7 to be conservative (avg word length + space + punctuation)
+  // Conservative Word Count Calc (7 chars per word)
   const getSafeWordCount = (chars: number) => Math.max(2, Math.floor(chars / 7));
 
   const enhancedFieldDescriptions = validFields.map((field) => {
@@ -213,29 +212,19 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     const maxLen = field.maxLength ?? 1000;
     const safeWords = getSafeWordCount(maxLen);
 
-    // STEP 1: INFER TYPE & SIZE
+    // SIMPLIFIED INFERENCE (TEXT ONLY)
     let inferredType: string;
 
-    // 1. Images
-    if (tag === 'img') inferredType = 'Image URL only';
-
-    // 2. Lists
-    else if (tag === 'ul' || tag === 'ol' || field.slotType === 'list') {
+    // 1. Lists
+    if (tag === 'ul' || tag === 'ol' || field.slotType === 'list') {
       const itemCount = orig.includes('\n') ? orig.split('\n').filter(Boolean).length : 0;
       inferredType = itemCount > 0 ? `List (~${itemCount} items)` : 'List (3-5 items)';
     }
-
-    // 3. CTA Buttons (Always Short)
-    else if (tag === 'a' || field.slotType === 'cta') {
-      inferredType = 'CTA Button (2-5 words)';
-    }
-
-    // 4. Headlines (Strict)
-    else if (field.slotType === 'headline' || maxLen < 120) {
+    // 2. Headlines (Strict Check)
+    else if (field.slotType === 'headline' || field.slotType === 'subheadline' || maxLen < 120) {
       inferredType = `HEADLINE (Max ${safeWords} words, NO sentences)`;
     }
-
-    // 5. Paragraphs (Word Count constrained)
+    // 3. Paragraphs
     else {
       inferredType = `Paragraph (Target: ~${safeWords} words)`;
     }
@@ -267,18 +256,17 @@ ${enhancedFieldDescriptions}
 **Tone:** ${userConfig.tone}
 
 **CRITICAL REQUIREMENTS:**
-1. **INCLUDE ALL ${validFields.length} SLOTS.** Missing a slot = System Failure.
+1. **INCLUDE ALL ${validFields.length} SLOTS.**
 2. **OBEY WORD COUNTS:** The "approx X words" is a HARD LIMIT. Do not exceed it.
 3. **Headlines:** One line, no periods.
-4. **CTAs:** Action-oriented, very short.
+4. **Lists:** Extract bullet points, one per line.
 5. **No HTML:** Plain text only.
+6. **No Images/CTAs:** Do not generate URLs or button text.
 
 **Response Format:**
-Return ONLY valid JSON.
-
+Return ONLY valid JSON. Use the exact slot IDs from the list above as keys.
 {
-${validFields.length > 0 ? `  "${validFields[0].slotId}": "content..."` : ''}${validFields.length > 1 ? `,\n  "${validFields[1].slotId}": "content..."` : ''}
-  ...
+  "slot_id": "content..."
 }
 `;
 
@@ -302,7 +290,6 @@ export function buildRegenerateSlotPrompt(request: RegenerateSlotRequest): strin
     paragraph: 'Write a paragraph that summarizes or extracts key points from the core narrative.',
     bullet: 'Write a concise bullet point.',
     list: 'Extract and format key points as a list (one item per line).',
-    cta: 'Write a short call-to-action (2-5 words). NO periods.',
     'meta-description': 'Write a meta description for SEO.',
     quote: 'Extract or create a compelling quote from the narrative.',
   };
