@@ -1178,57 +1178,46 @@ function WizardPageContent() {
                     </div>
                   );
                 }
-                
+
                 return (
-                <div className="flex flex-col lg:flex-row gap-6">
-                  {/* Left Column: Input Form (1/3 on large screens, full width on small) */}
-                  <div className="flex-1 lg:w-1/3">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6">
-                      Content Placeholders
-                    </h2>
-                    {selected && (
-                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                      <p className="text-sm text-blue-800">
-                          <strong>Template:</strong> {selected.name} ({selected.slots.length} editable sections)
-                      </p>
-                    </div>
-                  )}
+                  <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-140px)]">
+                    {/* Left Column: Editor (Inputs) */}
+                    <div className="flex-1 lg:w-1/2 flex flex-col h-full overflow-hidden">
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col h-full">
+                        <div className="p-4 border-b border-gray-200">
+                          <h2 className="text-lg font-semibold text-gray-900">1. Edit Content</h2>
+                          <p className="text-xs text-gray-500">Review and refine the AI-generated text.</p>
+                        </div>
 
-                  {!data.coreNarrative && (
-                    <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-                      <p className="text-sm text-yellow-800">
-                          <strong>Note:</strong> No core narrative found. Go back to Step 3 to generate the master narrative first.
-                      </p>
-                      <button
-                        onClick={handleMapNarrativeToSlots}
-                        disabled={isMappingToSlots || !data.coreNarrative}
-                        className="mt-3 px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm"
-                      >
-                        {isMappingToSlots ? 'Mapping...' : 'Map from Core Narrative'}
-                      </button>
-                    </div>
-                  )}
-                  
-                  {data.coreNarrative && (
-                    <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-                      <p className="text-sm text-blue-800 mb-2">
-                        <strong>✓ Core Narrative Available</strong> - Content slots are pre-filled from your core narrative. 
-                      </p>
-                    </div>
-                  )}
-                  
-                  {errorMessage && (
-                    <div className="mb-6">
-                      <div className="text-sm text-red-600 whitespace-pre-line">{errorMessage}</div>
-                    </div>
-                  )}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                          {!data.coreNarrative && (
+                            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                              <p className="text-sm text-yellow-800 mb-2">
+                                <strong>Note:</strong> No core narrative found. Go back to Step 3 to generate the master narrative first.
+                              </p>
+                              <button
+                                onClick={handleMapNarrativeToSlots}
+                                disabled={isMappingToSlots || !data.coreNarrative}
+                                className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm"
+                              >
+                                {isMappingToSlots ? 'Mapping...' : 'Map from Core Narrative'}
+                              </button>
+                            </div>
+                          )}
 
-                    {selected && (
-                  <div className="space-y-6">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                        Template Content Sections
-                      </h3>
-                        {selected.slots.map((slot) => {
+                          {data.coreNarrative && (
+                            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                              <p className="text-sm text-blue-800">
+                                <strong>✓ Core Narrative Available</strong> - Content slots are pre-filled. Edit as needed.
+                              </p>
+                            </div>
+                          )}
+
+                          {errorMessage && (
+                            <div className="text-sm text-red-600 whitespace-pre-line">{errorMessage}</div>
+                          )}
+
+                          {selected.slots.map((slot) => {
                         const slotValue = data.slotData?.[slot.id] || '';
                         const isFilled = slotValue.trim().length > 0;
                         const slotTypeMap: Record<string, string> = {
@@ -1246,7 +1235,7 @@ function WizardPageContent() {
                         const mappedSlotType = slotTypeMap[slot.type] || 'paragraph';
                         
                         return (
-                          <div key={slot.id}>
+                          <div key={slot.id} className="pb-4 border-b border-gray-100 last:border-0">
                             <div className="flex items-center justify-between mb-2">
                               <label className="block text-base font-medium text-gray-700">
                                 {slot.label} <span className="text-gray-500">({slot.type})</span>
@@ -1349,38 +1338,26 @@ function WizardPageContent() {
                           </div>
                         );
                       })}
-                    </div>
-                  )}
-
-                    <div className="mt-8 pt-6 border-t border-gray-200">
-                      <button
-                        onClick={handleOpenPreviewInNewTab}
-                        className="w-full px-6 py-3 text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors font-medium"
-                      >
-                        Generate Preview
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Live Preview (2/3 on large screens, full width on small) */}
-                  {selected && (
-                    <div className="flex-1 lg:w-2/3 lg:sticky lg:top-8 lg:self-start lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
-                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                          Live Preview
-                        </h3>
-                        <div className="border border-gray-300 rounded-md overflow-hidden bg-white">
-                          <div className="max-h-[calc(100vh-12rem)] overflow-y-auto">
-                            <UploadedTemplateRenderer
-                              template={selected}
-                              slotData={debouncedSlotData}
-                            />
-                          </div>
                         </div>
                       </div>
                     </div>
-                  )}
-                </div>
+
+                    {/* Right Column: Clean HTML Output */}
+                    <div className="flex-1 lg:w-1/2 flex flex-col h-full overflow-hidden">
+                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col h-full">
+                        <div className="p-4 border-b border-gray-200">
+                          <h2 className="text-lg font-semibold text-gray-900">2. Get HTML Code</h2>
+                          <p className="text-xs text-gray-500">Copy this code block into your WordPress editor.</p>
+                        </div>
+                        <div className="flex-1 overflow-hidden p-0">
+                          <UploadedTemplateRenderer
+                            template={selected}
+                            slotData={debouncedSlotData}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 );
               })()}
 
