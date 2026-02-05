@@ -190,7 +190,7 @@ Respond with ONLY the generated content. No explanations, no markdown formatting
 
 /**
  * Build the prompt for mapping core narrative to template slots.
- * TEXT ONLY: Headlines, Paragraphs, Lists. No Images or CTAs.
+ * TEXT ONLY. STRICT LIMITS.
  */
 export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsRequest): string {
   const { coreNarrative, templateFields, userConfig } = request;
@@ -203,8 +203,10 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     throw new Error('No valid template fields provided for narrative mapping');
   }
 
-  // Conservative Word Count Calc (7 chars per word)
-  const getSafeWordCount = (chars: number) => Math.max(2, Math.floor(chars / 7));
+  // EXTREME SAFETY MATH:
+  // We assume 1 word = 5 characters (very conservative).
+  // This ensures the AI runs out of "word budget" long before it hits the "character limit".
+  const getSafeWordCount = (chars: number) => Math.max(1, Math.floor(chars / 5));
 
   const enhancedFieldDescriptions = validFields.map((field) => {
     const orig = field.originalContent || '';
@@ -212,21 +214,28 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     const maxLen = field.maxLength ?? 1000;
     const safeWords = getSafeWordCount(maxLen);
 
-    // SIMPLIFIED INFERENCE (TEXT ONLY)
+    // T-SHIRT SIZING FOR AI CONTEXT
+    let sizeLabel = '';
+    if (maxLen < 40) sizeLabel = 'VERY SHORT FRAGMENT';
+    else if (maxLen < 80) sizeLabel = 'SHORT SENTENCE';
+    else if (maxLen < 200) sizeLabel = 'TINY PARAGRAPH';
+    else sizeLabel = 'STANDARD PARAGRAPH';
+
+    // SIMPLIFIED INFERENCE
     let inferredType: string;
 
     // 1. Lists
     if (tag === 'ul' || tag === 'ol' || field.slotType === 'list') {
       const itemCount = orig.includes('\n') ? orig.split('\n').filter(Boolean).length : 0;
-      inferredType = itemCount > 0 ? `List (~${itemCount} items)` : 'List (3-5 items)';
+      inferredType = itemCount > 0 ? `List (~${itemCount} items)` : 'List (3 items)';
     }
     // 2. Headlines (Strict Check)
     else if (field.slotType === 'headline' || field.slotType === 'subheadline' || maxLen < 120) {
-      inferredType = `HEADLINE (Max ${safeWords} words, NO sentences)`;
+      inferredType = `HEADLINE (Max ${safeWords} words)`;
     }
     // 3. Paragraphs
     else {
-      inferredType = `Paragraph (Target: ~${safeWords} words)`;
+      inferredType = `${sizeLabel} (Target: ~${safeWords} words)`;
     }
 
     let desc = `- "${field.slotId}": **LIMIT ${maxLen} CHARS** → Write approx ${safeWords} words → ${inferredType}`;
@@ -240,11 +249,11 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
 
   const prompt = `You are a professional copywriter. Your task is to fill template slots from a Core Narrative.
 
-**THE GOLDEN RULE: LENGTH IS MORE IMPORTANT THAN CONTENT.**
-The system will crash if you write too much. You MUST respect the "Write approx X words" instruction.
-- If it says "~10 words", do NOT write 20.
-- If it says "~50 words", do NOT write 100.
-- It is better to be too short than too long.
+**THE GOLDEN RULE: DO NOT EXCEED THE WORD COUNT.**
+The "approx X words" instruction is a SAFETY CEILING.
+- If it says "~6 words", writing 7 words is a FAILURE.
+- If it says "~40 words", writing 60 words is a FAILURE.
+- Be concise. Be punchy. Stop writing before you hit the limit.
 
 **Core Narrative (Source of Truth):**
 ${coreNarrative}
@@ -257,14 +266,14 @@ ${enhancedFieldDescriptions}
 
 **CRITICAL REQUIREMENTS:**
 1. **INCLUDE ALL ${validFields.length} SLOTS.**
-2. **OBEY WORD COUNTS:** The "approx X words" is a HARD LIMIT. Do not exceed it.
+2. **STRICT LENGTH CONTROL:** Never exceed the word count target.
 3. **Headlines:** One line, no periods.
 4. **Lists:** Extract bullet points, one per line.
 5. **No HTML:** Plain text only.
 6. **No Images/CTAs:** Do not generate URLs or button text.
 
 **Response Format:**
-Return ONLY valid JSON. Use the exact slot IDs from the list above as keys.
+Return ONLY valid JSON.
 {
   "slot_id": "content..."
 }

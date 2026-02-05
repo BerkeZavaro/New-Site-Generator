@@ -19,7 +19,6 @@ function mapSlotType(uploadedType: string): TemplateFieldDefinition['slotType'] 
     paragraph: 'paragraph',
     list: 'list',
     'rich-text': 'paragraph',
-    // Map legacy/ignored types to paragraph or headline just in case
     cta: 'headline',
     image: 'paragraph',
     url: 'headline',
@@ -29,7 +28,6 @@ function mapSlotType(uploadedType: string): TemplateFieldDefinition['slotType'] 
 
 /**
  * Get template field definitions for ANY template.
- * CRITICAL: Passes through tagName and originalContent to the AI.
  */
 export function getTemplateFields(template: TemplateConfig): TemplateFieldDefinition[] {
   if (!template?.slots?.length) return [];
@@ -51,16 +49,17 @@ function slotToField(slot: TemplateSlot): TemplateFieldDefinition {
   let maxLength = slot.maxLength ?? getSmartMaxLength(slot);
 
   if (maxLength == null) {
-    if (slotType === 'headline') maxLength = 80;
+    if (slotType === 'headline') maxLength = 60;
     else if (slotType === 'list') maxLength = 800;
     else maxLength = 500;
   }
 
   // 2. AGGRESSIVE CORRECTION:
   // Force short text (< 120 chars) to be Headlines.
+  // This prevents "Information About NMN" (21 chars) from becoming a paragraph.
   if (contentLen > 0 && contentLen < 120) {
     slotType = 'headline';
-    maxLength = Math.min(contentLen + 20, 120);
+    maxLength = Math.min(contentLen + 15, 120);
   } else if (maxLength < 120) {
     slotType = 'headline';
   }
