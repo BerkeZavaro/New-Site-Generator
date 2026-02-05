@@ -1,46 +1,34 @@
 /**
- * Unified template types that work for both system templates and uploaded templates.
- * This ensures all templates are treated the same way.
+ * Unified template types.
+ * Updated to include 'attributes' for preserving original CSS classes.
  */
 
 export type SlotType = "headline" | "subheadline" | "paragraph" | "list" | "image" | "cta";
 
 export type TemplateSlot = {
-  id: string;           // e.g. "page_title", "pageHeadline"
-  type: SlotType;       // Type of content slot
-  label: string;        // Human-readable label, e.g. "Page title"
-  /** HTML element tag (e.g. 'h1', 'p', 'ul') - used for strict AI length constraints */
+  id: string;
+  type: SlotType;
+  label: string;
   tagName?: string;
-  /** Original content from scraped/uploaded HTML - used as length/style reference for AI generation */
   originalContent?: string;
-  /** Word count of original content - e.g. 5 */
   wordCount?: number;
-  /** Derived max length constraint (chars) for AI generation */
   maxLength?: number;
+  /** Stores the raw HTML attributes (e.g. 'class="my-class" style="..."') */
+  attributes?: string;
 };
 
-/**
- * Universal Template Configuration
- * This interface is used by both system templates (like Creatine Report) 
- * and uploaded templates. All templates must conform to this structure.
- */
 export type TemplateConfig = {
-  id: string;           // Unique template identifier
-  name: string;         // Display name
-  description?: string; // Optional description
-  htmlBody: string;     // HTML structure (innerHTML from <body>)
-  css?: string;         // CSS styles
-  /** Resolved <link rel="stylesheet"> and <style> from head - for uploaded/scraped templates */
+  id: string;
+  name: string;
+  description?: string;
+  htmlBody: string;
+  css?: string;
   headContent?: string;
-  slots: TemplateSlot[]; // Array of editable content slots
-  createdAt?: string;   // ISO date (optional for system templates)
-  createdBy?: "system" | "uploaded"; // Origin of template
+  slots: TemplateSlot[];
+  createdAt?: string;
+  createdBy?: "system" | "uploaded";
 };
 
-/**
- * Template Metadata (for listing/selection)
- * Lightweight version used in template selection UI
- */
 export type TemplateMeta = {
   id: string;
   name: string;

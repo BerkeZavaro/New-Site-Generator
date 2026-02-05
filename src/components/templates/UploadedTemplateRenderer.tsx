@@ -11,21 +11,22 @@ interface UploadedTemplateRendererProps {
 export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplateRendererProps) {
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
 
-  // Generate the Clean HTML Block
+  // Generate the Clean HTML Block WITH ATTRIBUTES
   const generateCleanHtml = () => {
     return template.slots.map(slot => {
       const content = slotData[slot.id] || slot.originalContent || '';
       if (!content.trim()) return '';
 
       const tag = slot.tagName || 'p';
+      const attrs = slot.attributes ? ` ${slot.attributes}` : '';
 
       if (tag === 'ul' || tag === 'ol') {
         const items = content.split('\n').filter(line => line.trim());
         const listItems = items.map(item => `  <li>${item.replace(/^[•*-]\s*/, '')}</li>`).join('\n');
-        return `<${tag}>\n${listItems}\n</${tag}>`;
+        return `<${tag}${attrs}>\n${listItems}\n</${tag}>`;
       }
 
-      return `<${tag}>${content}</${tag}>`;
+      return `<${tag}${attrs}>${content}</${tag}>`;
     }).filter(Boolean).join('\n\n');
   };
 
@@ -33,7 +34,7 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
 
   const handleCopy = () => {
     navigator.clipboard.writeText(cleanHtml);
-    alert("HTML copied to clipboard! You can paste this directly into WordPress 'Custom HTML' block.");
+    alert("HTML copied to clipboard!");
   };
 
   return (
@@ -67,7 +68,6 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
       <div className="flex-1 overflow-auto p-6">
         {activeTab === 'preview' ? (
           <div className="prose max-w-none">
-            {/* Visual Preview of the Clean HTML */}
             <div dangerouslySetInnerHTML={{ __html: cleanHtml }} />
           </div>
         ) : (

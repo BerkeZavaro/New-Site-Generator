@@ -15,182 +15,64 @@ import type {
 
 /**
  * Build the prompt for generating the core narrative (Step 1).
- * This creates a comprehensive "master article" that serves as the source of truth.
  */
 export function buildCoreNarrativePrompt(request: CoreNarrativeRequest): string {
   const { userConfig, narrativeInstructions } = request;
-  
-  // Build audience context
+
   const audienceParts: string[] = [];
-  if (userConfig.ageRange && userConfig.ageRange !== 'all') {
-    audienceParts.push(`age range ${userConfig.ageRange}`);
-  }
-  if (userConfig.gender && userConfig.gender !== 'all') {
-    audienceParts.push(userConfig.gender);
-  }
-  if (userConfig.country) {
-    audienceParts.push(userConfig.country);
-  }
-  // Use targetStates array if available, otherwise fall back to single state
+  if (userConfig.ageRange && userConfig.ageRange !== 'all') audienceParts.push(`age range ${userConfig.ageRange}`);
+  if (userConfig.gender && userConfig.gender !== 'all') audienceParts.push(userConfig.gender);
+  if (userConfig.country) audienceParts.push(userConfig.country);
   if (userConfig.targetStates && userConfig.targetStates.length > 0) {
     audienceParts.push(userConfig.targetStates.join(', '));
   } else if (userConfig.state) {
     audienceParts.push(userConfig.state);
   }
-  const audienceContext = audienceParts.length > 0
-    ? `Target audience: ${audienceParts.join(', ')}. `
-    : '';
+  const audienceContext = audienceParts.length > 0 ? `Target audience: ${audienceParts.join(', ')}. ` : '';
 
-  // Build psychographic customization instructions (not geographic)
   let regionalInstructions = '';
   if (userConfig.targetStates && userConfig.targetStates.length > 0) {
-    const statesList = userConfig.targetStates.length === 1 
-      ? userConfig.targetStates[0]
-      : userConfig.targetStates.length === 2
-      ? userConfig.targetStates.join(' and ')
-      : `${userConfig.targetStates.slice(0, -1).join(', ')}, and ${userConfig.targetStates[userConfig.targetStates.length - 1]}`;
-    
-    regionalInstructions = `\n\n**PSYCHOGRAPHIC TARGETING (CRITICAL - NOT GEOGRAPHIC):**
-The target audience fits the psychographic profile typical of ${statesList}. Your task is to analyze the sociology, lifestyle values, and cultural mindset associated with this region, then adapt the copy's tone, metaphors, and priorities accordingly.
-
-**What to DO:**
-- Analyze the underlying values and mindset (e.g., "Colorado" = active, outdoorsy, health-conscious, value-driven, rugged individualism; "New York" = fast-paced, efficiency-focused, status-driven, results-oriented; "Texas" = independent, practical, family-centric, no-nonsense)
-- Adjust the tone to match these psychographic traits (e.g., more direct and efficient for fast-paced regions, more value-focused for cost-conscious regions, more aspirational for status-driven regions)
-- Use metaphors and examples that resonate with these values (e.g., outdoor/active metaphors for health-conscious regions, efficiency/productivity metaphors for fast-paced regions)
-- Prioritize messaging that aligns with their cultural mindset (e.g., emphasize independence and self-reliance for individualistic regions, emphasize family benefits for family-centric regions)
-
-**What NOT to DO (STRICT PROHIBITION):**
-- DO NOT mention specific city names (e.g., "Boulder", "Austin", "Denver", "Manhattan")
-- DO NOT mention specific landmarks, local businesses, or regional institutions
-- DO NOT mention the state name itself unless absolutely necessary for context
-- DO NOT use niche local expressions or regional slang
-- DO NOT create content that would alienate customers from other regions
-
-**Goal:** The copy should resonate with the mindset and values of someone from this psychographic profile while remaining applicable and welcoming to a national US audience. The content must feel culturally aligned without being geographically exclusive.`;
-  } else {
-    regionalInstructions = '\n\n**AUDIENCE:** General US audience.';
+    const statesList = userConfig.targetStates.join(', ');
+    regionalInstructions = `\n\n**PSYCHOGRAPHIC TARGETING:** Analyze the mindset of ${statesList}. Adapt tone and values accordingly (e.g., individualistic vs community-focused). DO NOT mention specific cities.`;
   }
 
-  // Build tone instruction
-  const toneInstructions: Record<string, string> = {
-    serious: 'Use a serious, professional, and authoritative tone.',
-    educational: 'Use an educational, informative, and helpful tone.',
-    cheerful: 'Use a cheerful, upbeat, and positive tone.',
-    direct: 'Use a direct, straightforward, and no-nonsense tone.',
-  };
-  const toneInstruction = toneInstructions[userConfig.tone.toLowerCase()] || 'Use a professional tone.';
+  const toneInstruction = `Use a ${userConfig.tone || 'professional'} tone.`;
 
-  // Build pain points context
-  const painPointsText = userConfig.painPoints && userConfig.painPoints.length > 0
-    ? `\n\nKey pain points to address: ${userConfig.painPoints.join(', ')}.`
-    : '';
+  return `You are a professional copywriter. Create a comprehensive master narrative.
 
-  const basePrompt = `You are a professional copywriter specializing in supplement and health product marketing. Your task is to create a comprehensive, cohesive master narrative for a product landing page.
+Product: ${userConfig.productName}
+Keyword: ${userConfig.mainKeyword}
+${audienceContext}${toneInstruction}${regionalInstructions}
 
-Product Name: ${userConfig.productName}
-Main Keyword/Topic: ${userConfig.mainKeyword}
-${audienceContext}${toneInstruction}${painPointsText}${regionalInstructions}
-
-**CRITICAL REQUIREMENTS:**
-
-1. Create a complete, cohesive narrative that covers:
-   - A compelling hook that addresses the main keyword/topic
-   - The problem or concern the target audience faces
-   - The scientific mechanism of how the product works
-   - How this product specifically addresses the problem
-   - Common objections and how to address them
-   - The value proposition and offer details
-   - A strong conclusion that reinforces the main message
-
-2. The narrative must be:
-   - Internally consistent (no contradictions)
-   - Scientifically accurate (avoid FDA-prohibited medical claims)
-   - Tailored to the target audience (${audienceContext || 'general audience'})
-   - Written in the requested tone: ${userConfig.tone}
-   - Naturally incorporates the keyword "${userConfig.mainKeyword}" throughout
-
-3. Write this as a complete, flowing article (800-1200 words). This will serve as the "source of truth" from which all page sections will be derived.
+**REQUIREMENTS:**
+1. Create a complete narrative (Hook, Problem, Solution, Mechanism, Value).
+2. Internally consistent and scientifically accurate.
+3. Approx 800-1200 words.
 
 ${narrativeInstructions ? `\n**Additional Instructions:**\n${narrativeInstructions}\n` : ''}
 
-Respond with ONLY the narrative text. Do not include headers, titles, or formatting. Write as a continuous, flowing article.`;
-
-  return basePrompt;
+Respond with ONLY the narrative text.`;
 }
 
 /**
- * Build the prompt for generating a specific slot from the core narrative (Step 2).
- * This ensures all slot content is derived from and consistent with the core narrative.
+ * Build the prompt for generating a specific slot from the core narrative.
  */
 export function buildSlotGenerationPrompt(request: SlotGenerationRequest): string {
-  const { slotId, slotType, coreNarrative, userConfig, slotInstructions, maxLength } = request;
+  const { slotType, coreNarrative, userConfig, slotInstructions, maxLength } = request;
 
-  // Build slot-specific instructions based on type
-  const slotTypeInstructions: Record<SlotType, string> = {
-    headline: 'Write a compelling headline (under 80 characters) that captures the main hook from the core narrative.',
-    subheadline: 'Write a supporting subheadline that expands on the headline.',
-    paragraph: 'Write a paragraph that summarizes or extracts key points from the core narrative.',
-    bullet: 'Write a concise bullet point that highlights a specific benefit or feature.',
-    list: 'Extract and format key points as a list.',
-    cta: 'Write a clear, action-oriented call-to-action.',
-    'meta-description': 'Write a meta description (under 160 characters) for SEO.',
-    quote: 'Extract or create a compelling quote from the narrative.',
-  };
+  return `Extract content from Narrative.
 
-  const typeInstruction = slotTypeInstructions[slotType] || 'Extract relevant content from the core narrative.';
+Narrative: ${coreNarrative}
+Task: Write a ${slotType}.
+${maxLength ? `MAX LENGTH: ${maxLength} chars.` : ''}
+${slotInstructions || ''}
 
-  // Build audience context
-  const audienceParts: string[] = [];
-  if (userConfig.ageRange && userConfig.ageRange !== 'all') {
-    audienceParts.push(`age range ${userConfig.ageRange}`);
-  }
-  if (userConfig.gender && userConfig.gender !== 'all') {
-    audienceParts.push(userConfig.gender);
-  }
-  // Use targetStates array if available, otherwise fall back to single state
-  if (userConfig.targetStates && userConfig.targetStates.length > 0) {
-    audienceParts.push(userConfig.targetStates.join(', '));
-  } else if (userConfig.state) {
-    audienceParts.push(userConfig.state);
-  }
-  const audienceContext = audienceParts.length > 0
-    ? `Target audience: ${audienceParts.join(', ')}. `
-    : '';
-
-  const lengthConstraint = maxLength
-    ? `\n\n**STRICT - ALWAYS OBEY:** Maximum ${maxLength} characters. No exceptions.`
-    : '';
-
-  const customInstructions = slotInstructions
-    ? `\n\n**Specific Instructions for this Slot:**\n${slotInstructions}`
-    : '';
-
-  const prompt = `You are a professional copywriter. Your task is to extract and adapt content from a provided Core Narrative to create a specific page element.
-
-**Core Narrative (Source of Truth):**
-${coreNarrative}
-
-**Task:**
-${typeInstruction}
-${audienceContext}
-${lengthConstraint}
-${customInstructions}
-
-**CRITICAL REQUIREMENTS:**
-1. The content MUST be derived from and consistent with the Core Narrative above.
-2. Do NOT introduce new information that contradicts or is not supported by the Core Narrative.
-3. Maintain the same tone and messaging as the Core Narrative.
-4. Ensure the content naturally incorporates the keyword "${userConfig.mainKeyword}" if relevant.
-5. The content should be compelling and appropriate for the target audience.
-
-Respond with ONLY the generated content. No explanations, no markdown formatting, just the content text.`;
-
-  return prompt;
+Response: ONLY content.`;
 }
 
 /**
  * Build the prompt for mapping core narrative to template slots.
- * TEXT ONLY. STRICT LIMITS.
+ * ULTRA-STRICT LIMITS implemented here.
  */
 export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsRequest): string {
   const { coreNarrative, templateFields, userConfig } = request;
@@ -200,13 +82,13 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
   );
 
   if (validFields.length === 0) {
-    throw new Error('No valid template fields provided for narrative mapping');
+    throw new Error('No valid template fields provided');
   }
 
-  // EXTREME SAFETY MATH:
-  // We assume 1 word = 5 characters (very conservative).
-  // This ensures the AI runs out of "word budget" long before it hits the "character limit".
-  const getSafeWordCount = (chars: number) => Math.max(1, Math.floor(chars / 5));
+  // ULTRA-SAFE MATH:
+  // We assume 1 word = 7.5 characters.
+  // Example: 36 chars / 7.5 = 4.8 -> 4 words.
+  const getSafeWordCount = (chars: number) => Math.max(1, Math.floor(chars / 7.5));
 
   const enhancedFieldDescriptions = validFields.map((field) => {
     const orig = field.originalContent || '';
@@ -214,31 +96,27 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     const maxLen = field.maxLength ?? 1000;
     const safeWords = getSafeWordCount(maxLen);
 
-    // T-SHIRT SIZING FOR AI CONTEXT
-    let sizeLabel = '';
-    if (maxLen < 40) sizeLabel = 'VERY SHORT FRAGMENT';
-    else if (maxLen < 80) sizeLabel = 'SHORT SENTENCE';
-    else if (maxLen < 200) sizeLabel = 'TINY PARAGRAPH';
-    else sizeLabel = 'STANDARD PARAGRAPH';
-
-    // SIMPLIFIED INFERENCE
+    // STRICT TYPE INFERENCE
     let inferredType: string;
+    let strictInstruction = '';
 
     // 1. Lists
     if (tag === 'ul' || tag === 'ol' || field.slotType === 'list') {
       const itemCount = orig.includes('\n') ? orig.split('\n').filter(Boolean).length : 0;
       inferredType = itemCount > 0 ? `List (~${itemCount} items)` : 'List (3 items)';
     }
-    // 2. Headlines (Strict Check)
-    else if (field.slotType === 'headline' || field.slotType === 'subheadline' || maxLen < 120) {
-      inferredType = `HEADLINE (Max ${safeWords} words)`;
+    // 2. Headlines / Short Text
+    else if (field.slotType === 'headline' || field.slotType === 'subheadline' || maxLen < 60) {
+      inferredType = 'HEADLINE';
+      strictInstruction = `[CRITICAL: Write exactly ${safeWords} words. NO SENTENCES. Fragment only.]`;
     }
     // 3. Paragraphs
     else {
-      inferredType = `${sizeLabel} (Target: ~${safeWords} words)`;
+      inferredType = 'Paragraph';
+      strictInstruction = `[CRITICAL: Stop writing after ${safeWords} words.]`;
     }
 
-    let desc = `- "${field.slotId}": **LIMIT ${maxLen} CHARS** → Write approx ${safeWords} words → ${inferredType}`;
+    let desc = `- "${field.slotId}" (Limit ${maxLen} chars): ${strictInstruction} → Write ~${safeWords} words → ${inferredType}`;
 
     if (orig) {
       const refPreview = orig.length > 50 ? orig.substring(0, 50) + '...' : orig;
@@ -247,112 +125,52 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     return desc;
   }).join('\n');
 
-  const prompt = `You are a professional copywriter. Your task is to fill template slots from a Core Narrative.
+  const prompt = `You are a professional copywriter. Fill the slots below from the Core Narrative.
 
-**THE GOLDEN RULE: DO NOT EXCEED THE WORD COUNT.**
-The "approx X words" instruction is a SAFETY CEILING.
-- If it says "~6 words", writing 7 words is a FAILURE.
-- If it says "~40 words", writing 60 words is a FAILURE.
-- Be concise. Be punchy. Stop writing before you hit the limit.
+**THE LAW OF LENGTH:**
+You are technically constrained.
+- If a slot allows **36 characters** (~4 words), you MUST NOT write a sentence. Write a label.
+  - BAD: "NMN helps your cells grow." (Too long)
+  - GOOD: "NMN Benefits" (Perfect)
 
-**Core Narrative (Source of Truth):**
+**Core Narrative:**
 ${coreNarrative}
 
-**Template Fields to Fill:**
+**Slots to Fill:**
 ${enhancedFieldDescriptions}
 
-**Target Audience:** ${userConfig.ageRange || 'all'} ${userConfig.gender || 'all'}${userConfig.country ? ` in ${userConfig.country}` : ''}
 **Tone:** ${userConfig.tone}
 
-**CRITICAL REQUIREMENTS:**
-1. **INCLUDE ALL ${validFields.length} SLOTS.**
-2. **STRICT LENGTH CONTROL:** Never exceed the word count target.
-3. **Headlines:** One line, no periods.
-4. **Lists:** Extract bullet points, one per line.
-5. **No HTML:** Plain text only.
-6. **No Images/CTAs:** Do not generate URLs or button text.
+**Requirements:**
+1. **JSON ONLY:** Return a valid JSON object.
+2. **Short Means Short:** If the word count target is < 5, do not use verbs. Use Title Case labels.
+3. **No HTML:** Plain text only.
 
 **Response Format:**
-Return ONLY valid JSON.
 {
   "slot_id": "content..."
-}
-`;
+}`;
 
   return prompt;
 }
 
 /**
  * Build the prompt for regenerating a single slot with core narrative context.
- * Used when user clicks "Regenerate" on a specific field.
  */
 export function buildRegenerateSlotPrompt(request: RegenerateSlotRequest): string {
-  const { slotId, slotType, coreNarrative, userConfig, regenerationInstructions, maxLength } = request;
+  const { slotId, slotType, coreNarrative, maxLength } = request;
+  const safeWords = maxLength ? Math.max(1, Math.floor(maxLength / 7.5)) : 10;
 
-  // CRITICAL: Character limit determines the type. Check limit FIRST.
-  const effectiveType = maxLength != null && maxLength < 80 ? 'headline' : slotType;
-  const isHeadline = effectiveType === 'headline' || effectiveType === 'subheadline';
+  return `Regenerate content for slot "${slotId}" from Narrative.
 
-  const slotTypeInstructions: Record<string, string> = {
-    headline: 'Write ONE short headline. Max a few words. NO periods.',
-    subheadline: 'Write ONE short subheadline. NO periods.',
-    paragraph: 'Write a paragraph that summarizes or extracts key points from the core narrative.',
-    bullet: 'Write a concise bullet point.',
-    list: 'Extract and format key points as a list (one item per line).',
-    'meta-description': 'Write a meta description for SEO.',
-    quote: 'Extract or create a compelling quote from the narrative.',
-  };
+Narrative: ${coreNarrative}
 
-  const typeInstruction = isHeadline
-    ? `This is a HEADLINE. Write ONE short line (max ${maxLength ?? 80} characters). NO periods.`
-    : (slotTypeInstructions[effectiveType] || 'Extract relevant content from the core narrative.');
+CONSTRAINT: Max ${maxLength ?? 80} characters.
+TARGET: Approx ${safeWords} words.
 
-  // Build tone instruction
-  const toneInstructions: Record<string, string> = {
-    serious: 'more serious and authoritative',
-    educational: 'more educational and informative',
-    cheerful: 'more cheerful and upbeat',
-    direct: 'more direct and straightforward',
-  };
-  const toneModifier = toneInstructions[userConfig.tone.toLowerCase()] || `more ${userConfig.tone}`;
+If target is < 5 words, write a LABEL (no full sentences).
 
-  const lengthConstraint = maxLength != null
-    ? `\n\n**STEP 1 - CHECK THE LIMIT: MAX ${maxLength} CHARACTERS.** Stay under it. Exceeding breaks the layout.`
-    : '';
-
-  const customInstructions = regenerationInstructions
-    ? `\n\n**Specific Regeneration Instructions:**\n${regenerationInstructions}`
-    : `\n\n**Tone Adjustment:** Make it ${toneModifier} while maintaining consistency with the core narrative.`;
-
-  const prompt = `You are a professional copywriter. Your task is to regenerate a specific page element using the Core Narrative as context.
-
-**Core Narrative (Source of Truth):**
-${coreNarrative}
-
-**Slot to Regenerate:**
-- Slot ID: ${slotId}
-${maxLength != null ? `- **MAX ${maxLength} CHARACTERS** — Check this FIRST. Limit < 80 = headline. Limit >= 80 = paragraph.` : ''}
-- Type: ${effectiveType}
-- Task: ${typeInstruction}
-${lengthConstraint}${customInstructions}
-
-**Target Audience:** ${userConfig.ageRange || 'all'} ${userConfig.gender || 'all'}${userConfig.country ? ` in ${userConfig.country}` : ''}${userConfig.targetStates && userConfig.targetStates.length > 0 ? ` (psychographic profile: ${userConfig.targetStates.join(', ')})` : ''}
-**Main Keyword:** ${userConfig.mainKeyword}
-${userConfig.targetStates && userConfig.targetStates.length > 0 
-  ? `\n**Psychographic Targeting:** Adapt tone, metaphors, and priorities to match the cultural mindset and values typical of ${userConfig.targetStates.length === 1 ? userConfig.targetStates[0] : userConfig.targetStates.join(', ')}. DO NOT mention city names, landmarks, or state names. Focus on values and mindset, not geography.`
-  : ''}
-
-**CRITICAL REQUIREMENTS:**
-1. The content MUST be derived from and consistent with the Core Narrative above.
-2. Do NOT introduce new information that contradicts or is not supported by the Core Narrative.
-3. Maintain the same overall messaging as the Core Narrative.
-4. Ensure the content naturally incorporates the keyword "${userConfig.mainKeyword}" if relevant.
-5. The regenerated content should be compelling and appropriate for the target audience.
-6. **CRITICAL: DO NOT include HTML tags in your response.** Return ONLY plain text content. The template already has the HTML structure. You should provide just the text that goes inside the HTML tags. For example, return "My Heading Text" NOT "<h1>My Heading Text</h1>".
-
-Respond with ONLY the regenerated content as plain text. No explanations, no markdown formatting, no HTML tags, just the content text.`;
-
-  return prompt;
+Response: Plain text content only.`;
 }
 
 /**

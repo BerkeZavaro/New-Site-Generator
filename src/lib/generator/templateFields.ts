@@ -1,16 +1,11 @@
 /**
  * Template Field Definitions
- * Defines the content slots available in each template.
- * Used for mapping core narrative to specific slots.
+ * Updated to be tighter on character limits.
  */
 
 import type { TemplateFieldDefinition } from './types';
 import type { TemplateConfig, TemplateSlot } from '@/lib/templates/types';
 
-/**
- * Map uploaded template slot type to our SlotType.
- * SIMPLIFIED: No CTAs, No Images.
- */
 function mapSlotType(uploadedType: string): TemplateFieldDefinition['slotType'] {
   const typeMap: Record<string, TemplateFieldDefinition['slotType']> = {
     text: 'paragraph',
@@ -49,17 +44,16 @@ function slotToField(slot: TemplateSlot): TemplateFieldDefinition {
   let maxLength = slot.maxLength ?? getSmartMaxLength(slot);
 
   if (maxLength == null) {
-    if (slotType === 'headline') maxLength = 60;
+    if (slotType === 'headline') maxLength = 50;
     else if (slotType === 'list') maxLength = 800;
     else maxLength = 500;
   }
 
   // 2. AGGRESSIVE CORRECTION:
-  // Force short text (< 120 chars) to be Headlines.
-  // This prevents "Information About NMN" (21 chars) from becoming a paragraph.
+  // If original was short, force Headline type and TIGHT limit.
   if (contentLen > 0 && contentLen < 120) {
     slotType = 'headline';
-    maxLength = Math.min(contentLen + 15, 120);
+    maxLength = Math.min(contentLen + 10, 120);
   } else if (maxLength < 120) {
     slotType = 'headline';
   }
@@ -79,7 +73,7 @@ function slotToField(slot: TemplateSlot): TemplateFieldDefinition {
 function getSmartMaxLength(slot: TemplateSlot): number | undefined {
   const tag = (slot.tagName || '').toLowerCase();
   const len = (slot.originalContent || '').length;
-  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) return len + 15;
+  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) return len + 10;
   return undefined;
 }
 
