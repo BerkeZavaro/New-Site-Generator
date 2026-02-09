@@ -309,6 +309,7 @@ function WizardPageContent() {
                 <label className="block text-sm font-medium mb-1">Tone</label>
                 <select className="w-full border p-2 rounded" value={data.tone} onChange={e => updateField('tone', e.target.value)}>
                   <option value="">Select...</option>
+                  {/* RESTORED: Expanded Tone Options */}
                   <option value="professional">Professional</option>
                   <option value="excited">Excited / Hype</option>
                   <option value="educational">Educational / Scientific</option>
@@ -330,6 +331,7 @@ function WizardPageContent() {
                 </select>
               </div>
 
+              {/* RESTORED: Gender Selection */}
               <div>
                 <label className="block text-sm font-medium mb-1">Target Gender</label>
                 <select className="w-full border p-2 rounded" value={data.gender} onChange={e => updateField('gender', e.target.value)}>
@@ -385,7 +387,7 @@ function WizardPageContent() {
           </div>
         )}
 
-        {/* STEP 4: TEXT EDITOR (STRICTLY TEXT) */}
+        {/* STEP 4: TEXT EDITOR */}
         {currentStep === 4 && selected && (
           <div className="flex flex-col h-[calc(100vh-140px)]">
             <div className="flex-1 overflow-hidden flex gap-6">
