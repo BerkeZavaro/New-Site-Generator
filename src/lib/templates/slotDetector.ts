@@ -1,6 +1,9 @@
 /**
- * Slot Detection Utility - WORDPRESS CONTENT MODE + ATTRIBUTES
- * Preserves CSS classes and IDs for perfect WordPress integration.
+ * Slot Detection Utility - MASTER SHELL CREATOR
+ * 1. Finds the Main Content Container.
+ * 2. Extracts Text Slots (for the Writer).
+ * 3. Extracts Image Slots + Dimensions (for the Image Studio).
+ * 4. Preserves all original attributes (classes, styles) for the Assembler.
  */
 
 import type { TemplateSlot, SlotType } from './types';
@@ -22,9 +25,8 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
   }
 
   const body = doc.body || doc.documentElement;
-  if (!body) return { htmlBody, slots: [] };
 
-  // 1. FIND MAIN CONTENT CONTAINER
+  // 1. FIND MAIN CONTENT CONTAINER (Ignore Nav/Footer/Sidebar)
   function findMainContent(root: Element): Element {
     const candidates = Array.from(root.querySelectorAll('div, article, section, main'));
     let bestCandidate = root;
@@ -39,7 +41,8 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
       const paras = node.querySelectorAll('p').length;
       const headers = node.querySelectorAll('h1, h2, h3, h4, h5, h6').length;
 
-      if (paras < 2) return;
+      // We want a container with actual content density
+      if (paras < 1) return;
 
       const score = paras + (headers * 2);
       if (score > maxScore) {
@@ -54,10 +57,11 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
   const contentRoot = findMainContent(body);
   const slots: TemplateSlot[] = [];
 
-  // 2. EXTRACT CONTENT & ATTRIBUTES
-  const allElements = contentRoot.querySelectorAll('h1, h2, h3, h4, h5, h6, p, ul, ol');
+  // 2. EXTRACT SLOTS (Text AND Images)
+  const allElements = contentRoot.querySelectorAll('h1, h2, h3, h4, h5, h6, p, ul, ol, img');
 
   allElements.forEach((element) => {
+    // Double check we aren't inside a nested unwanted element
     if (element.closest('.sidebar, .footer, .nav, .menu, .widget')) return;
 
     const tagName = element.tagName.toLowerCase();
@@ -67,18 +71,26 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
     else if (['h3', 'h4', 'h5', 'h6'].includes(tagName)) type = 'subheadline';
     else if (tagName === 'p') type = 'paragraph';
     else if (tagName === 'ul' || tagName === 'ol') type = 'list';
+    else if (tagName === 'img') type = 'image';
 
     if (!type) return;
     if (element.hasAttribute('data-slot')) return;
 
+    // Filter tiny text noise (but keep images)
     const text = element.textContent?.trim() || '';
-    if (text.length < 5 && type !== 'image') return;
+    if (type !== 'image' && text.length < 5) return;
 
-    const baseId = text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .substring(0, 35) || `${type}_${slots.length}`;
+    // Generate ID
+    let baseId = '';
+    if (type === 'image') {
+      const alt = element.getAttribute('alt') || 'image';
+      baseId = alt.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 20);
+    } else {
+      baseId = text.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 35);
+    }
+
+    // Fallback ID
+    if (!baseId || baseId.length < 2) baseId = `${type}_${slots.length}`;
 
     let slotId = baseId;
     let counter = 1;
@@ -89,6 +101,7 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
 
     const label = slotId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
+    // Capture Content
     let originalContent = text;
     if (type === 'list') {
       const items = element.querySelectorAll('li');
@@ -96,32 +109,47 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
         .map(li => li.textContent?.trim() || '')
         .filter(Boolean)
         .join('\n');
+    } else if (type === 'image') {
+      originalContent = element.getAttribute('src') || '';
     }
 
     // Determine effective type (Short P -> Headline)
     let effectiveType = type;
-    let maxLen = deriveMaxLength(tagName, originalContent, type);
     if (type === 'paragraph' && originalContent.length < 100) {
       effectiveType = 'headline';
-      maxLen = Math.min(originalContent.length + 15, 100);
     }
 
-    // CAPTURE ATTRIBUTES (Crucial for WordPress styles)
+    // CAPTURE ATTRIBUTES (Class, Style, etc.)
     const attributes = Array.from(element.attributes)
-      .filter(attr => attr.name !== 'data-slot')
+      .filter(attr => attr.name !== 'data-slot' && attr.name !== 'src' && attr.name !== 'width' && attr.name !== 'height')
       .map(attr => `${attr.name}="${attr.value}"`)
       .join(' ');
 
-    const wc = wordCount(originalContent);
+    // CAPTURE IMAGE DIMENSIONS
+    let width: number | undefined;
+    let height: number | undefined;
+    if (type === 'image') {
+      const w = element.getAttribute('width');
+      const h = element.getAttribute('height');
+      if (w) width = parseInt(w, 10);
+      if (h) height = parseInt(h, 10);
+
+      // Mark the element so we can find it later for replacement
+      element.setAttribute('data-slot', slotId);
+    } else {
+      // Mark text elements
+      element.setAttribute('data-slot', slotId);
+    }
+
     slots.push({
       id: slotId,
       type: effectiveType,
       label,
       tagName: tagName,
       originalContent,
-      wordCount: wc,
-      maxLength: maxLen,
       attributes: attributes || undefined,
+      ...(width ? { width } : {}),
+      ...(height ? { height } : {}),
     });
   });
 
@@ -129,18 +157,4 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
     htmlBody: contentRoot.innerHTML,
     slots,
   };
-}
-
-function wordCount(s: string): number {
-  return s.trim().split(/\s+/).filter(Boolean).length;
-}
-
-function deriveMaxLength(tag: string, originalContent: string, type: SlotType): number {
-  const len = originalContent.length;
-  const t = tag.toLowerCase();
-
-  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(t)) return Math.min(len + 15, 100);
-  if (t === 'li') return Math.ceil(len * 1.2);
-
-  return Math.min(Math.ceil(len * 1.2), 1200);
 }

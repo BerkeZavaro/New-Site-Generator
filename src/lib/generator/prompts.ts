@@ -70,7 +70,7 @@ Response: ONLY content.`;
 
 /**
  * Build the prompt for mapping core narrative to template slots.
- * LABEL MODE IMPLEMENTED.
+ * LABEL MODE: Expanded to < 85 chars. Headlines capped at 8 words.
  */
 export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsRequest): string {
   const { coreNarrative, templateFields, userConfig } = request;
@@ -83,8 +83,10 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     throw new Error('No valid template fields provided');
   }
 
-  // ULTRA-SAFE MATH: 1 word = 8 characters (Paranoid level safety).
-  const getSafeWordCount = (chars: number) => Math.max(1, Math.floor(chars / 8));
+  // PARANOID MATH:
+  // 1 word = 10 characters. (Extremely conservative)
+  // 64 chars -> 6 words.
+  const getSafeWordCount = (chars: number) => Math.max(1, Math.floor(chars / 10));
 
   const enhancedFieldDescriptions = validFields.map((field) => {
     const orig = field.originalContent || '';
@@ -100,23 +102,26 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
       const itemCount = orig.includes('\n') ? orig.split('\n').filter(Boolean).length : 0;
       inferredType = itemCount > 0 ? `List (~${itemCount} items)` : 'List (3 items)';
     }
-    // 2. LABEL MODE (For Tiny Slots)
-    else if (maxLen < 60) {
-      inferredType = 'LABEL/FRAGMENT';
-      strictInstruction = `[CRITICAL: Write exactly ${safeWords} words. NO SENTENCES. NO VERBS. NO PUNCTUATION. Just a keyword label.]`;
+    // 2. LABEL MODE (Expanded to < 85 chars)
+    // This catches your 64-char subheadlines and forces them to be labels.
+    else if (maxLen < 85) {
+      inferredType = `LABEL (Fragment)`;
+      strictInstruction = `[CRITICAL: Write exactly ${safeWords} words. NO SENTENCES. NO VERBS. NO LISTS. Just a short label.]`;
     }
-    // 3. SHORT MODE (For Subheadlines/Short Headers)
-    else if (field.slotType === 'headline' || field.slotType === 'subheadline' || maxLen < 120) {
-      inferredType = 'HEADLINE';
-      strictInstruction = `[CRITICAL: Max ${safeWords} words. Short phrase only. NO full sentences.]`;
+    // 3. SUBHEADLINES (Strict Cap)
+    else if (field.slotType === 'headline' || field.slotType === 'subheadline') {
+      inferredType = `HEADLINE`;
+      // Cap headlines at 8 words max, even if character limit allows more
+      const headlineWords = Math.min(safeWords, 8);
+      strictInstruction = `[CRITICAL: Max ${headlineWords} words. Short phrase only.]`;
     }
     // 4. Paragraphs
     else {
-      inferredType = 'Paragraph';
+      inferredType = `Paragraph`;
       strictInstruction = `[CRITICAL: Stop writing after ${safeWords} words.]`;
     }
 
-    let desc = `- "${field.slotId}" (Limit ${maxLen} chars): ${strictInstruction} → Write ~${safeWords} words → ${inferredType}`;
+    let desc = `- "${field.slotId}" (Limit ${maxLen} chars): ${strictInstruction} → Target: ${safeWords} words → ${inferredType}`;
 
     if (orig) {
       const refPreview = orig.length > 50 ? orig.substring(0, 50) + '...' : orig;
@@ -129,10 +134,10 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
 
 **THE LAW OF LENGTH:**
 You are technically constrained.
-- **IF LIMIT < 50 CHARS:** You are NOT writing a sentence. You are writing a LABEL.
-  - BAD: "NMN is great for energy." (Sentence = FAIL)
-  - GOOD: "Energy Boost" (Label = PASS)
-- **IF LIMIT < 100 CHARS:** No periods. No full explanations. Short phrases only.
+- **IF LIMIT < 85 CHARS:** You are writing a LABEL.
+  - BAD: "Choosing the best supplement involves checking purity." (Sentence = FAIL)
+  - GOOD: "Choosing a Supplement" (Label = PASS)
+- **SUBHEADLINES:** Never list keywords. Write a cohesive short phrase.
 
 **Core Narrative:**
 ${coreNarrative}
@@ -144,9 +149,8 @@ ${enhancedFieldDescriptions}
 
 **Requirements:**
 1. **JSON ONLY:** Return a valid JSON object.
-2. **Short Means Short:** If target words < 5, output a Title Case label.
-3. **Subheadlines:** Treat "subheadlines" with short limits as Labels, not paragraphs.
-4. **No HTML:** Plain text only.
+2. **Short Means Short:** Use Title Case for labels.
+3. **No HTML:** Plain text only.
 
 **Response Format:**
 {

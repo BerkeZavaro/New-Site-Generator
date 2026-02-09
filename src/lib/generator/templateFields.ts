@@ -180,7 +180,10 @@ export function getUploadedTemplateFields(
 ): TemplateFieldDefinition[] {
   return slots
     .filter((s): s is NonNullable<typeof s> =>
-      s != null && s.id != null && s.type !== 'image' && s.type !== 'cta'
+      s != null &&
+      s.id != null &&
+      s.type !== 'image' && // DOUBLE CHECK THIS FILTER EXISTS
+      s.type !== 'cta'
     )
     .map(slot => slotToField(slot));
 }
