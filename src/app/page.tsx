@@ -26,7 +26,7 @@ export default function Home() {
         </div>
 
         {/* THE TOOLBOX GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
 
           {/* 1. TEXT GENERATOR */}
           <Link
@@ -61,7 +61,21 @@ export default function Home() {
             </p>
           </Link>
 
-          {/* 4. MY FUNNELS (Saved Work) */}
+          {/* 4. FINAL ASSEMBLER */}
+          <Link
+            href="/assembler"
+            className="group block p-8 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-green-300 transition-all"
+          >
+            <div className="text-green-600 mb-4">
+              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">4. Final Assembler</h3>
+            <p className="text-gray-500">
+              Merge Text + Images into the master template to create the final HTML.
+            </p>
+          </Link>
+
+          {/* 5. SAVED WORK */}
           <Link
             href="/funnels"
             className="group block p-6 bg-orange-600 rounded-lg shadow-md hover:bg-orange-700 transition-all transform hover:-translate-y-1"

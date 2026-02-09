@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { UploadedTemplateRenderer } from '@/components/templates/UploadedTemplateRenderer';
 import { TEMPLATES, TemplateId, getTemplateConfigById } from '@/lib/templates/registry';
@@ -180,7 +181,8 @@ function WizardPageContent() {
     if (!data.coreNarrative) return;
     const selected = getSelectedTemplate();
     const maxLength = getSlotMaxLength(slotId, selected);
-    const effectiveType = maxLength && maxLength < 80 ? 'headline' : slotType;
+    // Align with prompts.ts threshold (85 chars)
+    const effectiveType = maxLength && maxLength < 85 ? 'headline' : slotType;
 
     try {
       const res = await fetch('/api/regenerate-slot', {
@@ -212,7 +214,13 @@ function WizardPageContent() {
     <div className="min-h-screen bg-gray-50 pb-20">
       <header className="bg-white border-b border-gray-200 px-6 py-4 mb-8">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h1 className="text-xl font-bold text-gray-900">Text Generator (Part 2)</h1>
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-gray-500 hover:text-gray-900 font-medium flex items-center gap-1">
+              ← Dashboard
+            </Link>
+            <div className="h-6 w-px bg-gray-300"></div>
+            <h1 className="text-xl font-bold text-gray-900">Text Generator (Part 2)</h1>
+          </div>
           <div className="text-sm text-gray-500">Step {currentStep} of 4</div>
         </div>
       </header>
@@ -243,6 +251,44 @@ function WizardPageContent() {
                 <label className="block text-sm font-medium mb-1">Main Keyword</label>
                 <input className="w-full border p-2 rounded" value={data.mainKeyword} onChange={e => updateField('mainKeyword', e.target.value)} />
               </div>
+
+              {/* RESTORED: FULL FONT LIST */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Preferred Font Style</label>
+                <select
+                  className="w-full border p-2 rounded"
+                  value={data.font}
+                  onChange={e => updateField('font', e.target.value)}
+                >
+                  <optgroup label="Sans-Serif (Modern)">
+                    <option value="Arial">Arial</option>
+                    <option value="Helvetica">Helvetica</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Trebuchet MS">Trebuchet MS</option>
+                    <option value="Tahoma">Tahoma</option>
+                    <option value="Geneva">Geneva</option>
+                    <option value="Open Sans">Open Sans (Google)</option>
+                    <option value="Roboto">Roboto (Google)</option>
+                    <option value="Lato">Lato (Google)</option>
+                    <option value="Montserrat">Montserrat (Google)</option>
+                    <option value="Poppins">Poppins (Google)</option>
+                  </optgroup>
+                  <optgroup label="Serif (Classic)">
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Garamond">Garamond</option>
+                    <option value="Palatino">Palatino</option>
+                    <option value="Merriweather">Merriweather (Google)</option>
+                    <option value="Playfair Display">Playfair Display (Google)</option>
+                  </optgroup>
+                  <optgroup label="Monospace (Code)">
+                    <option value="Courier New">Courier New</option>
+                    <option value="Monaco">Monaco</option>
+                    <option value="Lucida Console">Lucida Console</option>
+                  </optgroup>
+                </select>
+              </div>
+
               <button
                 onClick={() => setCurrentStep(2)}
                 disabled={!data.templateId || !data.productName}
@@ -264,22 +310,39 @@ function WizardPageContent() {
                 <select className="w-full border p-2 rounded" value={data.tone} onChange={e => updateField('tone', e.target.value)}>
                   <option value="">Select...</option>
                   <option value="professional">Professional</option>
-                  <option value="excited">Excited</option>
-                  <option value="educational">Educational</option>
+                  <option value="excited">Excited / Hype</option>
+                  <option value="educational">Educational / Scientific</option>
+                  <option value="persuasive">Persuasive / Sales</option>
+                  <option value="witty">Witty / Fun</option>
+                  <option value="urgent">Urgent / Scarcity</option>
+                  <option value="empathetic">Empathetic / Caring</option>
+                  <option value="authoritative">Authoritative / Expert</option>
                 </select>
               </div>
-               <div>
+              <div>
                 <label className="block text-sm font-medium mb-1">Age Range</label>
                 <select className="w-full border p-2 rounded" value={data.ageRange} onChange={e => updateField('ageRange', e.target.value)}>
                   <option value="">Select...</option>
-                  <option value="18-35">18-35</option>
-                  <option value="35-50">35-50</option>
-                  <option value="50+">50+</option>
+                  <option value="18-35">18-35 (Young Adults)</option>
+                  <option value="35-50">35-50 (Middle Age)</option>
+                  <option value="50+">50+ (Seniors)</option>
+                  <option value="all">All Ages</option>
                 </select>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Target Gender</label>
+                <select className="w-full border p-2 rounded" value={data.gender} onChange={e => updateField('gender', e.target.value)}>
+                  <option value="">Select...</option>
+                  <option value="all">All / Neutral</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+              </div>
+
               <div className="flex gap-4 mt-6">
-                 <button onClick={() => setCurrentStep(1)} className="px-4 py-2 border rounded">Back</button>
-                 <button onClick={() => setCurrentStep(3)} className="flex-1 bg-blue-600 text-white py-2 rounded">Next</button>
+                <button onClick={() => setCurrentStep(1)} className="px-4 py-2 border rounded">Back</button>
+                <button onClick={() => setCurrentStep(3)} className="flex-1 bg-blue-600 text-white py-2 rounded">Next</button>
               </div>
             </div>
           </div>
@@ -305,19 +368,19 @@ function WizardPageContent() {
               placeholder="Your master narrative will appear here..."
             />
             <div className="flex gap-4 mt-6">
-               <button onClick={() => setCurrentStep(2)} className="px-4 py-2 border rounded">Back</button>
-               <button
-                 onClick={async () => {
-                   if(data.coreNarrative) {
-                     await handleMapNarrativeToSlots();
-                     setCurrentStep(4);
-                   }
-                 }}
-                 disabled={!data.coreNarrative}
-                 className="flex-1 bg-blue-600 text-white py-2 rounded disabled:bg-gray-300"
-               >
-                 {isMappingToSlots ? 'Mapping...' : 'Next: Generate Content'}
-               </button>
+              <button onClick={() => setCurrentStep(2)} className="px-4 py-2 border rounded">Back</button>
+              <button
+                onClick={async () => {
+                  if (data.coreNarrative) {
+                    await handleMapNarrativeToSlots();
+                    setCurrentStep(4);
+                  }
+                }}
+                disabled={!data.coreNarrative}
+                className="flex-1 bg-blue-600 text-white py-2 rounded disabled:bg-gray-300"
+              >
+                {isMappingToSlots ? 'Mapping...' : 'Next: Generate Content'}
+              </button>
             </div>
           </div>
         )}
@@ -326,13 +389,11 @@ function WizardPageContent() {
         {currentStep === 4 && selected && (
           <div className="flex flex-col h-[calc(100vh-140px)]">
             <div className="flex-1 overflow-hidden flex gap-6">
-              {/* LEFT PANEL: EDITOR */}
               <div className="flex-1 bg-white border border-gray-200 rounded-lg overflow-hidden flex flex-col">
                 <div className="p-4 bg-gray-50 border-b font-medium text-gray-700">
                   Text Content (Strict Limits)
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                  {/* CRITICAL FILTER: REMOVE IMAGES & CTAS */}
                   {selected.slots
                     .filter(s => s.type !== 'image' && s.type !== 'cta')
                     .map(slot => {
@@ -381,14 +442,12 @@ function WizardPageContent() {
                 </div>
               </div>
 
-              {/* RIGHT PANEL: PREVIEW / CODE */}
               <div className="flex-1 bg-white border border-gray-200 rounded-lg overflow-hidden flex flex-col">
                 <div className="p-4 bg-gray-50 border-b font-medium text-gray-700">
                   Preview & Code
                 </div>
                 <div className="flex-1 overflow-hidden relative">
-                   {/* This Renderer will show the COPY CODE button */}
-                   <UploadedTemplateRenderer template={selected} slotData={debouncedSlotData} />
+                  <UploadedTemplateRenderer template={selected} slotData={debouncedSlotData} />
                 </div>
               </div>
             </div>

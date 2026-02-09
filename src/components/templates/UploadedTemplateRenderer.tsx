@@ -11,36 +11,49 @@ interface UploadedTemplateRendererProps {
 export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplateRendererProps) {
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
 
-  // Generate the Clean HTML Block WITH ATTRIBUTES
+  // Generate Clean HTML (For WordPress)
   const generateCleanHtml = () => {
-    return template.slots.map(slot => {
-      const content = slotData[slot.id] || slot.originalContent || '';
-      if (!content.trim()) return '';
+    return template.slots
+      .filter(slot => slot.type !== 'image' && slot.type !== 'cta')
+      .map(slot => {
+        const content = slotData[slot.id] || slot.originalContent || '';
+        if (!content.trim()) return '';
 
-      const tag = slot.tagName || 'p';
-      const attrs = slot.attributes ? ` ${slot.attributes}` : '';
+        const tag = slot.tagName || 'p';
+        const attrs = slot.attributes ? ` ${slot.attributes}` : '';
 
-      if (tag === 'ul' || tag === 'ol') {
-        const items = content.split('\n').filter(line => line.trim());
-        const listItems = items.map(item => `  <li>${item.replace(/^[•*-]\s*/, '')}</li>`).join('\n');
-        return `<${tag}${attrs}>\n${listItems}\n</${tag}>`;
-      }
+        if (tag === 'ul' || tag === 'ol') {
+          const items = content.split('\n').filter(line => line.trim());
+          const listItems = items.map(item => `  <li>${item.replace(/^[•*-]\s*/, '')}</li>`).join('\n');
+          return `<${tag}${attrs}>\n${listItems}\n</${tag}>`;
+        }
+        return `<${tag}${attrs}>${content}</${tag}>`;
+      })
+      .filter(Boolean)
+      .join('\n\n');
+  };
 
-      return `<${tag}${attrs}>${content}</${tag}>`;
-    }).filter(Boolean).join('\n\n');
+  const handleCopyHtml = () => {
+    navigator.clipboard.writeText(generateCleanHtml());
+    alert("Clean HTML copied! (Best for manual WordPress pasting)");
+  };
+
+  // Generate JSON Data (For Assembler)
+  const handleCopyAssemblerData = () => {
+    const cleanData: Record<string, string> = {};
+    Object.keys(slotData).forEach(key => {
+      if (slotData[key]) cleanData[key] = slotData[key];
+    });
+    navigator.clipboard.writeText(JSON.stringify(cleanData, null, 2));
+    alert("Assembler Data copied! Paste this into Part 4 to build the full page.");
   };
 
   const cleanHtml = generateCleanHtml();
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(cleanHtml);
-    alert("HTML copied to clipboard!");
-  };
-
   return (
     <div className="flex flex-col h-full bg-white rounded-md border border-gray-200 overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
+      <div className="flex flex-wrap items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 gap-2">
         <div className="flex space-x-2">
           <button
             onClick={() => setActiveTab('preview')}
@@ -55,13 +68,23 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
             Raw HTML Code
           </button>
         </div>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 px-3 py-1 text-sm font-medium text-white bg-green-600 rounded hover:bg-green-700 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-          Copy HTML
-        </button>
+
+        <div className="flex space-x-2">
+          <button
+            onClick={handleCopyHtml}
+            className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+            title="Copy simple HTML tags"
+          >
+            Copy HTML
+          </button>
+          <button
+            onClick={handleCopyAssemblerData}
+            className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700 shadow-sm"
+            title="Copy data for the Final Assembler tool"
+          >
+            Copy Data for Assembler
+          </button>
+        </div>
       </div>
 
       {/* Content Area */}
