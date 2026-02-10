@@ -89,10 +89,14 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
   const getSafeWordCount = (chars: number) => Math.max(1, Math.floor(chars / 10));
 
   const enhancedFieldDescriptions = validFields.map((field) => {
-    const orig = field.originalContent || '';
+    // NOTE: We intentionally ignore 'originalContent' here so the AI
+    // is NOT biased by the placeholder text.
     const tag = (field.tagName || '').toLowerCase();
     const maxLen = field.maxLength ?? 1000;
     const safeWords = getSafeWordCount(maxLen);
+
+    // Original content is used ONLY for list detection logic, NEVER shown to AI.
+    const orig = field.originalContent || '';
 
     let inferredType: string;
     let strictInstruction = '';
@@ -123,10 +127,10 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
 
     let desc = `- "${field.slotId}" (Limit ${maxLen} chars): ${strictInstruction} → Target: ${safeWords} words → ${inferredType}`;
 
-    if (orig) {
-      const refPreview = orig.length > 50 ? orig.substring(0, 50) + '...' : orig;
-      desc += `\n  (Ref: "${refPreview}")`;
-    }
+    // *** FIX: REMOVED REFERENCE INJECTION ***
+    // We do NOT append the (Ref: ...) line anymore.
+    // This forces the AI to write from scratch.
+
     return desc;
   }).join('\n');
 
@@ -151,6 +155,7 @@ ${enhancedFieldDescriptions}
 1. **JSON ONLY:** Return a valid JSON object.
 2. **Short Means Short:** Use Title Case for labels.
 3. **No HTML:** Plain text only.
+4. **FRESH CONTENT:** Do not try to guess what was there before. Write purely based on the new product narrative.
 
 **Response Format:**
 {
