@@ -1,6 +1,6 @@
 /**
  * Unified template types.
- * Updated to include Image Dimensions for the "Image Studio".
+ * Updated to support "List Item Templates" (preserving checkmarks/icons).
  */
 
 export type SlotType = "headline" | "subheadline" | "paragraph" | "list" | "image" | "cta";
@@ -13,18 +13,18 @@ export type TemplateSlot = {
   originalContent?: string;
   wordCount?: number;
   maxLength?: number;
-  /** Stores the raw HTML attributes (class, style, etc.) for perfect cloning */
   attributes?: string;
-  /** Image specific metadata for the Image Studio */
   width?: number;
   height?: number;
+  /** Stores the HTML pattern of a list item (e.g. "<i class='check'></i> {{CONTENT}}") */
+  listTemplate?: string;
 };
 
 export type TemplateConfig = {
   id: string;
   name: string;
   description?: string;
-  htmlBody: string; // The "Master Shell" with data-slot IDs injected
+  htmlBody: string;
   css?: string;
   headContent?: string;
   slots: TemplateSlot[];

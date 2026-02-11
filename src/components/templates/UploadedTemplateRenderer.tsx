@@ -22,11 +22,29 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
         const tag = slot.tagName || 'p';
         const attrs = slot.attributes ? ` ${slot.attributes}` : '';
 
+        // LIST HANDLING WITH STYLE PRESERVATION
         if (tag === 'ul' || tag === 'ol') {
           const items = content.split('\n').filter(line => line.trim());
-          const listItems = items.map(item => `  <li>${item.replace(/^[•*-]\s*/, '')}</li>`).join('\n');
+          
+          const listItems = items.map(item => {
+            const cleanItemText = item.replace(/^[•*-]\s*/, '');
+            
+            // If we captured a style pattern (e.g. checkmarks), use it
+            if (slot.listTemplate) {
+              // Replace placeholder with new text
+              // Only do safe replacement if {{CONTENT}} exists, otherwise fallback
+              if (slot.listTemplate.includes('{{CONTENT}}')) {
+                 const styledContent = slot.listTemplate.replace('{{CONTENT}}', cleanItemText);
+                 return `  <li>${styledContent}</li>`;
+              }
+            }
+            // Fallback to plain list item
+            return `  <li>${cleanItemText}</li>`;
+          }).join('\n');
+
           return `<${tag}${attrs}>\n${listItems}\n</${tag}>`;
         }
+
         return `<${tag}${attrs}>${content}</${tag}>`;
       })
       .filter(Boolean)
@@ -56,7 +74,7 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
       await navigator.clipboard.writeText(generateJsonData());
       alert("JSON Data copied! Ready for the Assembler.");
     } catch (err) {
-      alert("Failed to copy. Please manually select and copy the JSON.");
+       alert("Failed to copy. Please manually select and copy the JSON.");
     }
   };
 
@@ -87,23 +105,23 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
             Assembler JSON
           </button>
         </div>
-
+        
         <div className="flex space-x-2">
-          {activeTab === 'json' ? (
-            <button
-              onClick={handleCopyJson}
-              className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700 shadow-sm"
-            >
-              Copy JSON
-            </button>
-          ) : (
-            <button
-              onClick={handleCopyHtml}
-              className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
-            >
-              Copy HTML
-            </button>
-          )}
+            {activeTab === 'json' ? (
+              <button
+                onClick={handleCopyJson}
+                className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700 shadow-sm"
+              >
+                Copy JSON
+              </button>
+            ) : (
+              <button
+                onClick={handleCopyHtml}
+                className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+              >
+                Copy HTML
+              </button>
+            )}
         </div>
       </div>
 
@@ -114,7 +132,7 @@ export function UploadedTemplateRenderer({ template, slotData }: UploadedTemplat
             <div dangerouslySetInnerHTML={{ __html: cleanHtml }} />
           </div>
         )}
-
+        
         {activeTab === 'code' && (
           <pre className="p-4 bg-gray-900 text-gray-100 text-sm font-mono whitespace-pre-wrap h-full overflow-auto">
             {cleanHtml}
