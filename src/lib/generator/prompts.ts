@@ -41,13 +41,14 @@ export function buildCoreNarrativePrompt(request: CoreNarrativeRequest): string 
   return `You are a professional copywriter. Create a comprehensive master narrative.
 
 Product: ${userConfig.productName}
-Keyword: ${userConfig.mainKeyword}
+Target Keywords: ${userConfig.mainKeyword} (Treat these as the core topics to cover)
 ${audienceContext}${toneInstruction}${regionalInstructions}
 
 **REQUIREMENTS:**
 1. Create a complete narrative (Hook, Problem, Solution, Mechanism, Value).
-2. Internally consistent and scientifically accurate.
-3. Approx 800-1200 words.
+2. **KEYWORD USAGE:** Naturally weave the "Target Keywords" into the story. Do not stuff them, but ensure the narrative touches on these themes.
+3. Internally consistent and scientifically accurate.
+4. Approx 800-1200 words.
 
 Respond with ONLY the narrative text.`;
 }

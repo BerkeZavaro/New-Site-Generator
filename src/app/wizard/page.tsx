@@ -248,8 +248,21 @@ function WizardPageContent() {
                 <input className="w-full border p-2 rounded" value={data.productName} onChange={e => updateField('productName', e.target.value)} />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Main Keyword</label>
-                <input className="w-full border p-2 rounded" value={data.mainKeyword} onChange={e => updateField('mainKeyword', e.target.value)} />
+                <label className="block text-sm font-medium mb-1">Target Keywords</label>
+                <div className="relative">
+                  <input
+                    className="w-full border p-2 rounded pr-20"
+                    value={data.mainKeyword}
+                    onChange={e => updateField('mainKeyword', e.target.value)}
+                    placeholder="e.g. Creatine, Muscle Growth, Recovery, Energy"
+                  />
+                  <span className="absolute right-2 top-2 text-xs text-gray-400">
+                    Comma separated
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  List the main topics you want the AI to cover. The first one will be the primary focus.
+                </p>
               </div>
 
               {/* RESTORED: FULL FONT LIST */}
