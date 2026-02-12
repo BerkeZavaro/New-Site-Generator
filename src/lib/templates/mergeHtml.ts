@@ -17,7 +17,7 @@ export function mergeHtml(request: MergeRequest): string {
     const parser = new DOMParser();
     doc = parser.parseFromString(template.htmlBody, 'text/html');
   } catch (e) {
-    console.error('Failed to parse template HTML');
+    console.error("Failed to parse template HTML");
     return template.htmlBody;
   }
 
@@ -34,13 +34,16 @@ export function mergeHtml(request: MergeRequest): string {
         // Smart List Styling: Check if we saved a pattern (like checkmarks)
         if (slot.listTemplate && slot.listTemplate.includes('{{CONTENT}}')) {
           const htmlItems = items.map(item => {
-            const cleanItemText = item.replace(/^[•*-]\s*/, '');
+            const cleanItemText = item.replace(/^[\d+\.•*-]+\s*/, '');
             const styledContent = slot.listTemplate!.replace('{{CONTENT}}', cleanItemText);
             return `<li>${styledContent}</li>`;
           }).join('');
           element.innerHTML = htmlItems;
         } else {
-          const htmlItems = items.map(item => `<li>${item.replace(/^[•*-]\s*/, '')}</li>`).join('');
+          const htmlItems = items.map(item => {
+            const cleanItemText = item.replace(/^[\d+\.•*-]+\s*/, '');
+            return `<li>${cleanItemText}</li>`;
+          }).join('');
           element.innerHTML = htmlItems;
         }
       } else {
@@ -71,6 +74,7 @@ export function mergeHtml(request: MergeRequest): string {
 
       if (finalSrc) {
         element.setAttribute('src', finalSrc);
+        // CRITICAL: Remove 'srcset' to prevent broken local paths from overriding
         element.removeAttribute('srcset');
       }
     }
