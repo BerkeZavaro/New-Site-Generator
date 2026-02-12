@@ -2,13 +2,14 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { UploadedTemplateRenderer } from '@/components/templates/UploadedTemplateRenderer';
 import { TEMPLATES, TemplateId, getTemplateConfigById } from '@/lib/templates/registry';
 import { loadUploadedTemplates } from '@/lib/templates/uploadedStorage';
 import type { UploadedTemplate } from '@/lib/templates/uploadedTypes';
 import type { TemplateConfig } from '@/lib/templates/types';
 import { getTemplateFields } from '@/lib/generator/templateFields';
+import { saveFunnel, getFunnelById } from '@/lib/savedFunnelStorage';
 
 // --- HELPER COMPONENTS ---
 
@@ -99,16 +100,33 @@ const initialData: WizardData = {
 
 function WizardPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [data, setData] = useState<WizardData>(initialData);
   const [uploadedTemplates, setUploadedTemplates] = useState<UploadedTemplate[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMappingToSlots, setIsMappingToSlots] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setUploadedTemplates(loadUploadedTemplates());
   }, []);
+
+  // Load existing project from URL ?id=
+  useEffect(() => {
+    const id = searchParams.get('id');
+    if (id) {
+      const saved = getFunnelById(id);
+      if (saved?.data) {
+        setProjectId(saved.id);
+        setData({ ...initialData, ...saved.data });
+        if (saved.data.slotData && Object.keys(saved.data.slotData).length > 0) {
+          setCurrentStep(4);
+        }
+      }
+    }
+  }, [searchParams]);
 
   const debouncedSlotData = useDebounce(data.slotData || {}, 300);
 
@@ -119,6 +137,17 @@ function WizardPageContent() {
 
   const updateField = (field: keyof WizardData, value: string | string[]) => {
     setData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = () => {
+    if (!data.productName) {
+      setErrorMessage('Please enter a Product Name before saving.');
+      return;
+    }
+    setErrorMessage(null);
+    const newId = saveFunnel(data, projectId);
+    setProjectId(newId);
+    router.replace(`/wizard?id=${newId}`, { scroll: false });
   };
 
   const handleGenerateCoreNarrative = async () => {
@@ -221,9 +250,25 @@ function WizardPageContent() {
             <div className="h-6 w-px bg-gray-300"></div>
             <h1 className="text-xl font-bold text-gray-900">Text Generator (Part 2)</h1>
           </div>
-          <div className="text-sm text-gray-500">Step {currentStep} of 4</div>
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-gray-500">Step {currentStep} of 4</div>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded shadow hover:bg-orange-700 transition-colors"
+            >
+              {projectId ? 'Save Changes' : 'Save Project'}
+            </button>
+          </div>
         </div>
       </header>
+      {errorMessage && (
+        <div className="max-w-7xl mx-auto px-6 mb-4">
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded text-sm">
+            {errorMessage}
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-6">
         {/* STEP 1 */}
@@ -416,10 +461,16 @@ function WizardPageContent() {
                       const max = getSlotMaxLength(slot.id, selected);
                       return (
                         <div key={slot.id} className="relative">
-                          <div className="flex justify-between mb-1">
-                            <label className="font-medium text-gray-900">{slot.label}</label>
+                          <div className="flex justify-between items-center mb-1">
+                            <div className="flex items-center gap-2">
+                              <label className="font-medium text-gray-900">{slot.label}</label>
+                              <span className="text-xs text-gray-400 font-mono uppercase border border-gray-200 px-1 rounded bg-gray-50">
+                                {slot.type}
+                              </span>
+                            </div>
                             {data.coreNarrative && (
                               <button
+                                type="button"
                                 onClick={() => handleRegenerateSlot(slot.id, slot.type)}
                                 className="text-xs text-blue-600 hover:underline"
                               >

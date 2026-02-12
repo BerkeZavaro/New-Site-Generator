@@ -9,7 +9,6 @@ import { ImageStudio } from '@/components/templates/ImageStudio';
 export default function ImageStudioPage() {
   const [templates, setTemplates] = useState<UploadedTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [slotData, setSlotData] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setTemplates(loadUploadedTemplates());
@@ -50,13 +49,7 @@ export default function ImageStudioPage() {
 
         {/* IMAGE STUDIO COMPONENT */}
         {selectedTemplate ? (
-          <ImageStudio
-            template={selectedTemplate}
-            slotData={slotData}
-            onUpdateSlot={(id, val) => setSlotData(prev => ({ ...prev, [id]: val }))}
-            productName=""
-            mainKeyword=""
-          />
+          <ImageStudio template={selectedTemplate} />
         ) : (
           <div className="text-center py-20 bg-white rounded-lg border border-gray-200 border-dashed">
             <p className="text-gray-400 text-lg">Select a template above to load its image slots.</p>
