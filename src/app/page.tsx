@@ -6,7 +6,7 @@ export default function Home() {
       <div className="max-w-6xl w-full">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Creatine Funnel Site Generator (Modular)
+            Funnel Site Generator (Modular)
           </h1>
           <p className="text-xl text-gray-600">
             A specialized toolkit for building high-converting affiliate pages.
