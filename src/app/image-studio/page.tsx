@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { loadUploadedTemplates } from '@/lib/templates/uploadedStorage';
@@ -8,7 +8,7 @@ import type { UploadedTemplate } from '@/lib/templates/uploadedTypes';
 import { ImageStudio } from '@/components/templates/ImageStudio';
 import { getSavedFunnels, saveFunnel, getFunnelById, type SavedFunnel } from '@/lib/savedFunnelStorage';
 
-export default function ImageStudioPage() {
+function ImageStudioContent() {
   const searchParams = useSearchParams();
 
   const [templates, setTemplates] = useState<UploadedTemplate[]>([]);
@@ -144,5 +144,13 @@ export default function ImageStudioPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ImageStudioPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center">Loading Studio...</div>}>
+      <ImageStudioContent />
+    </Suspense>
   );
 }

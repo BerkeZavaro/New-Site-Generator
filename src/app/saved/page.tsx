@@ -36,6 +36,9 @@ export default function SavedFunnelsPage() {
         {funnels.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-lg border border-dashed border-gray-300">
             <p className="text-gray-400 text-lg mb-4">No saved projects found.</p>
+            <p className="text-sm text-gray-500 mb-6">
+              (If you just saved a project, try refreshing this page)
+            </p>
             <Link
               href="/wizard"
               className="px-4 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700"
