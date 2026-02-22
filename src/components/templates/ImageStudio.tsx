@@ -11,6 +11,45 @@ interface ImageStudioProps {
   onImagesChange: (images: Record<string, string>) => void;
 }
 
+const compressImage = async (base64Str: string): Promise<string> => {
+  if (typeof window === 'undefined') return base64Str;
+
+  if (!base64Str.startsWith('data:image') || base64Str.length < 500000) {
+    return base64Str;
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 1200;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > MAX_WIDTH) {
+        height = Math.round(height * (MAX_WIDTH / width));
+        width = MAX_WIDTH;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      if (ctx) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(compressed);
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => resolve(base64Str);
+  });
+};
+
 export function ImageStudio({ template, initialImages, onImagesChange }: ImageStudioProps) {
   const imageSlots = template.slots.filter(s => s.type === 'image');
 
@@ -22,8 +61,9 @@ export function ImageStudio({ template, initialImages, onImagesChange }: ImageSt
     }
   }, [initialImages]);
 
-  const handleUrlChange = (slotId: string, url: string) => {
-    const newImages = { ...imageUrls, [slotId]: url };
+  const handleUrlChange = async (slotId: string, url: string) => {
+    const compressedUrl = await compressImage(url);
+    const newImages = { ...imageUrls, [slotId]: compressedUrl };
     setImageUrls(newImages);
     onImagesChange(newImages);
   };
@@ -53,8 +93,7 @@ export function ImageStudio({ template, initialImages, onImagesChange }: ImageSt
             Export or Save
           </h2>
           <p className="text-sm text-purple-700">
-            Your images are automatically synced to the project when you click &quot;Save Project&quot; above.
-            You can also copy the raw data here if needed.
+            Images are automatically compressed to save space. Click &quot;Save Project&quot; above to sync.
           </p>
         </div>
         <button
@@ -98,16 +137,15 @@ export function ImageStudio({ template, initialImages, onImagesChange }: ImageSt
                 {currentUrl && (
                   <div className="pt-4 border-t border-gray-100">
                     <p className="text-xs text-orange-600 mb-2 font-medium">
-                      ⚠️ AI Links expire! Save this image:
+                      ⚠️ AI Links expire!
                     </p>
                     <a
                       href={currentUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 font-medium hover:underline"
-                      download={`image-${slot.id}`}
+                      download={`image-${slot.id}.jpg`}
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                       Download Image
                     </a>
                   </div>
@@ -119,7 +157,7 @@ export function ImageStudio({ template, initialImages, onImagesChange }: ImageSt
                   slotId={slot.id}
                   slotLabel={slot.label}
                   value={currentUrl}
-                  onChange={(val) => handleUrlChange(slot.id, val)}
+                  onChange={(val) => void handleUrlChange(slot.id, val)}
                   productName=""
                   mainKeyword=""
                   dimensions={dimensions}
