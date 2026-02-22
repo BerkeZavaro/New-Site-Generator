@@ -1,25 +1,23 @@
 /**
  * Utility functions to extract image metadata from templates
+ * Updated to parse CSS inline styles for dimensions.
  */
 
 export interface ImageMetadata {
-  src?: string; // Current placeholder image URL
+  src?: string;
   width?: number;
   height?: number;
   alt?: string;
   className?: string;
-  context?: string; // Surrounding text/elements for context
+  context?: string;
 }
 
-/**
- * Extract image metadata from an HTML element with data-slot attribute
- */
 export function extractImageMetadata(htmlBody: string, slotId: string): ImageMetadata | null {
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlBody, "text/html");
     const imgElement = doc.querySelector(`img[data-slot="${slotId}"]`) as HTMLImageElement;
-    
+
     if (!imgElement) {
       return null;
     }
@@ -30,39 +28,27 @@ export function extractImageMetadata(htmlBody: string, slotId: string): ImageMet
       className: imgElement.className || undefined,
     };
 
-    // Extract dimensions from attributes or styles
+    // 1. Attribute Detection
     const widthAttr = imgElement.getAttribute("width");
     const heightAttr = imgElement.getAttribute("height");
-    
-    if (widthAttr) {
-      metadata.width = parseInt(widthAttr, 10);
-    }
-    if (heightAttr) {
-      metadata.height = parseInt(heightAttr, 10);
+
+    if (widthAttr) metadata.width = parseInt(widthAttr, 10);
+    if (heightAttr) metadata.height = parseInt(heightAttr, 10);
+
+    // 2. Inline Style Detection (The Missing Link)
+    // Browsers often put dimensions in 'style' attribute like "width: 200px;"
+    if (!metadata.width || !metadata.height) {
+      const style = imgElement.getAttribute("style") || "";
+      const wMatch = style.match(/width:\s*(\d+)px/i);
+      const hMatch = style.match(/height:\s*(\d+)px/i);
+
+      if (!metadata.width && wMatch) metadata.width = parseInt(wMatch[1], 10);
+      if (!metadata.height && hMatch) metadata.height = parseInt(hMatch[1], 10);
     }
 
-    // Try to get dimensions from computed styles (if available in browser context)
-    // Note: This won't work in server-side parsing, but we can try
-    if (typeof window !== "undefined") {
-      try {
-        const computedStyle = window.getComputedStyle(imgElement);
-        const width = computedStyle.width;
-        const height = computedStyle.height;
-        if (width && width !== "auto" && !metadata.width) {
-          metadata.width = parseInt(width, 10);
-        }
-        if (height && height !== "auto" && !metadata.height) {
-          metadata.height = parseInt(height, 10);
-        }
-      } catch (e) {
-        // Ignore errors in server-side context
-      }
-    }
-
-    // Extract context (parent element text or nearby headings)
+    // Extract context
     const parent = imgElement.parentElement;
     if (parent) {
-      // Look for nearby heading
       let current: Element | null = parent;
       for (let i = 0; i < 3 && current; i++) {
         const heading = current.querySelector("h1, h2, h3, h4, h5, h6");
@@ -72,8 +58,7 @@ export function extractImageMetadata(htmlBody: string, slotId: string): ImageMet
         }
         current = current.parentElement;
       }
-      
-      // If no heading found, use parent's text content (first 50 chars)
+
       if (!metadata.context && parent.textContent) {
         const text = parent.textContent.trim();
         if (text.length > 0) {
@@ -89,19 +74,13 @@ export function extractImageMetadata(htmlBody: string, slotId: string): ImageMet
   }
 }
 
-/**
- * Extract all image slots metadata from a template
- */
 export function extractAllImageMetadata(htmlBody: string, imageSlotIds: string[]): Record<string, ImageMetadata> {
   const metadata: Record<string, ImageMetadata> = {};
-  
   for (const slotId of imageSlotIds) {
     const imgMetadata = extractImageMetadata(htmlBody, slotId);
     if (imgMetadata) {
       metadata[slotId] = imgMetadata;
     }
   }
-  
   return metadata;
 }
-

@@ -1,12 +1,11 @@
 /**
  * Prompt engineering logic for content generation.
- * Separated from API calling logic for maintainability and testability.
  */
 
-import type { 
-  UserConfig, 
-  SlotType, 
-  SlotGenerationRequest, 
+import type {
+  UserConfig,
+  SlotType,
+  SlotGenerationRequest,
   CoreNarrativeRequest,
   TemplateFieldDefinition,
   MapNarrativeToSlotsRequest,
@@ -71,7 +70,6 @@ Response: ONLY content.`;
 
 /**
  * Build the prompt for mapping core narrative to template slots.
- * LABEL MODE: Expanded to < 85 chars. Headlines capped at 8 words.
  */
 export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsRequest): string {
   const { coreNarrative, templateFields, userConfig } = request;
@@ -84,39 +82,33 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     throw new Error('No valid template fields provided');
   }
 
-  // PARANOID MATH:
-  // 1 word = 10 characters. (Extremely conservative)
-  // 64 chars -> 6 words.
   const getSafeWordCount = (chars: number) => Math.max(1, Math.floor(chars / 10));
 
   const enhancedFieldDescriptions = validFields.map((field) => {
-    // NOTE: We intentionally ignore 'originalContent' here so the AI
-    // is NOT biased by the placeholder text.
     const tag = (field.tagName || '').toLowerCase();
     const maxLen = field.maxLength ?? 1000;
     const safeWords = getSafeWordCount(maxLen);
-
-    // Original content is used ONLY for list detection logic, NEVER shown to AI.
     const orig = field.originalContent || '';
 
     let inferredType: string;
     let strictInstruction = '';
 
-    // 1. Lists
+    // 1. Lists - STRICT ENFORCEMENT
     if (tag === 'ul' || tag === 'ol' || field.slotType === 'list') {
       const itemCount = orig.includes('\n') ? orig.split('\n').filter(Boolean).length : 0;
-      inferredType = itemCount > 0 ? `List (~${itemCount} items)` : 'List (3 items)';
+      const targetCount = itemCount > 0 ? itemCount : 3;
+
+      inferredType = `LIST (${targetCount} items)`;
+      strictInstruction = `[CRITICAL: Output MUST be a bulleted list. Do NOT write a paragraph. Create exactly ${targetCount} list items.]`;
     }
-    // 2. LABEL MODE (Expanded to < 85 chars)
-    // This catches your 64-char subheadlines and forces them to be labels.
+    // 2. LABEL MODE
     else if (maxLen < 85) {
       inferredType = `LABEL (Fragment)`;
       strictInstruction = `[CRITICAL: Write exactly ${safeWords} words. NO SENTENCES. NO VERBS. NO LISTS. Just a short label.]`;
     }
-    // 3. SUBHEADLINES (Strict Cap)
+    // 3. SUBHEADLINES
     else if (field.slotType === 'headline' || field.slotType === 'subheadline') {
       inferredType = `HEADLINE`;
-      // Cap headlines at 8 words max, even if character limit allows more
       const headlineWords = Math.min(safeWords, 8);
       strictInstruction = `[CRITICAL: Max ${headlineWords} words. Short phrase only.]`;
     }
@@ -126,23 +118,15 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
       strictInstruction = `[CRITICAL: Stop writing after ${safeWords} words.]`;
     }
 
-    let desc = `- "${field.slotId}" (Limit ${maxLen} chars): ${strictInstruction} → Target: ${safeWords} words → ${inferredType}`;
-
-    // *** FIX: REMOVED REFERENCE INJECTION ***
-    // We do NOT append the (Ref: ...) line anymore.
-    // This forces the AI to write from scratch.
-
-    return desc;
+    return `- "${field.slotId}" (Limit ${maxLen} chars): ${strictInstruction} → Target: ${safeWords} words → ${inferredType}`;
   }).join('\n');
 
   const prompt = `You are a professional copywriter. Fill the slots below from the Core Narrative.
 
-**THE LAW OF LENGTH:**
-You are technically constrained.
-- **IF LIMIT < 85 CHARS:** You are writing a LABEL.
-  - BAD: "Choosing the best supplement involves checking purity." (Sentence = FAIL)
-  - GOOD: "Choosing a Supplement" (Label = PASS)
-- **SUBHEADLINES:** Never list keywords. Write a cohesive short phrase.
+**THE LAW OF FORMAT:**
+1. **LISTS:** If a slot says "LIST", you MUST return a plain text list separated by newlines (e.g. "- Item 1\n- Item 2"). NEVER write a paragraph for a list slot.
+2. **LABELS:** If a slot says "LABEL", write a 2-4 word fragment.
+3. **NO HTML:** Return plain text only.
 
 **Core Narrative:**
 ${coreNarrative}
@@ -151,12 +135,6 @@ ${coreNarrative}
 ${enhancedFieldDescriptions}
 
 **Tone:** ${userConfig.tone}
-
-**Requirements:**
-1. **JSON ONLY:** Return a valid JSON object.
-2. **Short Means Short:** Use Title Case for labels.
-3. **No HTML:** Plain text only.
-4. **FRESH CONTENT:** Do not try to guess what was there before. Write purely based on the new product narrative.
 
 **Response Format:**
 {
@@ -168,7 +146,6 @@ ${enhancedFieldDescriptions}
 
 /**
  * Build the prompt for regenerating a single slot.
- * FIXED: Uses the same LABEL MODE logic.
  */
 export function buildRegenerateSlotPrompt(request: RegenerateSlotRequest): string {
   const { slotId, slotType, coreNarrative, maxLength } = request;

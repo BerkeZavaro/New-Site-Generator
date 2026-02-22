@@ -1,29 +1,37 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ImageSlotUpload } from '@/components/templates/ImageSlotUpload';
 import type { TemplateConfig } from '@/lib/templates/types';
 import { extractImageMetadata } from '@/lib/templates/imageExtractor';
 
 interface ImageStudioProps {
   template: TemplateConfig;
+  initialImages?: Record<string, string>;
+  onImagesChange: (images: Record<string, string>) => void;
 }
 
-export function ImageStudio({ template }: ImageStudioProps) {
-  // Filter for ONLY image slots
+export function ImageStudio({ template, initialImages, onImagesChange }: ImageStudioProps) {
   const imageSlots = template.slots.filter(s => s.type === 'image');
 
-  // Local state to hold the "Generated/Uploaded" URLs
-  const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+  const [imageUrls, setImageUrls] = useState<Record<string, string>>(initialImages || {});
+
+  useEffect(() => {
+    if (initialImages) {
+      setImageUrls(initialImages);
+    }
+  }, [initialImages]);
 
   const handleUrlChange = (slotId: string, url: string) => {
-    setImageUrls(prev => ({ ...prev, [slotId]: url }));
+    const newImages = { ...imageUrls, [slotId]: url };
+    setImageUrls(newImages);
+    onImagesChange(newImages);
   };
 
   const copyJson = async () => {
     try {
       await navigator.clipboard.writeText(JSON.stringify(imageUrls, null, 2));
-      alert("Image Data copied! \n\nNext Step: Go to the 'Final Assembler' and paste this into Box #3.");
+      alert("Image Data copied!");
     } catch (err) {
       alert("Failed to copy. Please manually copy the data.");
     }
@@ -39,40 +47,36 @@ export function ImageStudio({ template }: ImageStudioProps) {
 
   return (
     <div className="space-y-8">
-      {/* HEADER ACTIONS */}
       <div className="bg-purple-50 border border-purple-200 p-6 rounded-lg flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h2 className="text-lg font-bold text-purple-900">
-            Step 2: Export for Assembler
+            Export or Save
           </h2>
           <p className="text-sm text-purple-700">
-            Once you have generated/selected all your images, click this button to get the code for the Final Assembler.
+            Your images are automatically synced to the project when you click &quot;Save Project&quot; above.
+            You can also copy the raw data here if needed.
           </p>
         </div>
         <button
           type="button"
           onClick={copyJson}
-          className="px-6 py-3 bg-purple-600 text-white font-bold rounded-lg shadow-md hover:bg-purple-700 transition-all flex items-center gap-2"
+          className="px-6 py-3 bg-purple-100 text-purple-700 font-bold rounded-lg hover:bg-purple-200 transition-all flex items-center gap-2"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
-          Copy Image Data
+          Copy JSON (Manual Backup)
         </button>
       </div>
 
-      {/* SLOTS GRID */}
       <div className="grid grid-cols-1 gap-8">
         {imageSlots.map((slot) => {
-          // 1. Get dimensions
           const dimensions = {
             width: slot.width || extractImageMetadata(template.htmlBody, slot.id)?.width,
             height: slot.height || extractImageMetadata(template.htmlBody, slot.id)?.height
           };
 
-          const currentUrl = imageUrls[slot.id];
+          const currentUrl = imageUrls[slot.id] || '';
 
           return (
             <div key={slot.id} className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm flex flex-col md:flex-row gap-8">
-              {/* Left: Specs */}
               <div className="md:w-1/3 space-y-3">
                 <h4 className="text-lg font-bold text-gray-900">{slot.label}</h4>
                 <div className="flex items-center gap-2">
@@ -91,11 +95,6 @@ export function ImageStudio({ template }: ImageStudioProps) {
                   )}
                 </div>
 
-                <p className="text-sm text-gray-500">
-                  Use the tools on the right to fill this slot.
-                </p>
-
-                {/* DOWNLOAD BUTTON */}
                 {currentUrl && (
                   <div className="pt-4 border-t border-gray-100">
                     <p className="text-xs text-orange-600 mb-2 font-medium">
@@ -115,19 +114,16 @@ export function ImageStudio({ template }: ImageStudioProps) {
                 )}
               </div>
 
-              {/* Right: Input */}
               <div className="md:flex-1 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <div className="mb-4">
-                  <ImageSlotUpload
-                    slotId={slot.id}
-                    slotLabel={slot.label}
-                    value={currentUrl || ''}
-                    onChange={(val) => handleUrlChange(slot.id, val)}
-                    productName=""
-                    mainKeyword=""
-                    dimensions={dimensions}
-                  />
-                </div>
+                <ImageSlotUpload
+                  slotId={slot.id}
+                  slotLabel={slot.label}
+                  value={currentUrl}
+                  onChange={(val) => handleUrlChange(slot.id, val)}
+                  productName=""
+                  mainKeyword=""
+                  dimensions={dimensions}
+                />
               </div>
             </div>
           );
