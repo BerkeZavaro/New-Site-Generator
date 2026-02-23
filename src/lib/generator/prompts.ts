@@ -127,8 +127,11 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
   const prompt = `You are a professional copywriter. Fill the slots below using the Core Narrative as a base.
 
 **THE GOLDEN RULES:**
-1. **IMPROVISE IF NEEDED:** If the Core Narrative is missing specific details for a slot (like "Ingredients" or "FAQ"), **INVENT plausible details** that fit the product ("${userConfig.productName}").
-2. **NEVER FAIL:** Do NOT return "Content not available" or "Missing info". You must write content for every single slot.
+1. **IGNORE SLOT NAMES FOR TOPIC:** The Slot IDs (like "nmn_benefits" or "creatine_header") refer to the OLD template topic. **IGNORE the words in the ID.** - If Slot ID says "nmn_benefits", BUT your Narrative is "Clowns", write about **CLOWN BENEFITS**.
+   - The Narrative is your ONLY source of truth for the topic.
+
+2. **IMPROVISE IF NEEDED:** If the Core Narrative is missing specific details for a slot, **INVENT plausible details** that fit the **Core Narrative's Topic** (e.g. Clowns), NOT the Slot ID's topic.
+
 3. **FORMATTING:** - **LISTS:** If a slot says "LIST", return a plain text list (e.g. "- Item 1").
    - **LABELS:** If a slot says "LABEL", write a 2-4 word fragment.
    - **NO HTML:** Return plain text only.
@@ -177,9 +180,9 @@ Narrative: ${coreNarrative}
 - Target Length: ~${safeWords} words
 - TASK: ${taskInstruction}
 
-**RULE:** If the narrative is missing data, **IMPROVISE** based on the context. Never return empty or error text.
-
-If target is < 5 words, write a LABEL (e.g. "Health Benefits") not a sentence.
+**RULE:** - IGNORE any topic mentioned in the Slot ID ("${slotId}").
+- Follow the topic of the **Narrative** strictly.
+- If the narrative is missing data, **IMPROVISE** based on the Narrative's context.
 
 Response: Plain text content only.`;
 }

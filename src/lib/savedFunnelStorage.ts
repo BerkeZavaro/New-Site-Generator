@@ -46,8 +46,8 @@ export function getSavedFunnels(): SavedFunnel[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored ? JSON.parse(stored) : [];
-  } catch (e) {
-    console.error("Error loading funnels", e);
+  } catch (error) {
+    console.error('Error loading funnels:', error);
     return [];
   }
 }
@@ -110,8 +110,10 @@ export function saveFunnel(funnelData: unknown, funnelId?: string): string {
       err.message?.toLowerCase().includes('exceeded')
     ) {
       alert(
-        "⚠️ STORAGE FULL! The project is too large to save.\n\nYou may need to delete old projects from 'Saved Work'."
+        "⚠️ STORAGE FULL! The project is too large to save.\n\nTry deleting old projects from 'Saved Work' or ensure your images are compressed."
       );
+    } else {
+      alert('Error saving project: ' + (err?.message ?? 'Unknown error'));
     }
     return newId;
   }
@@ -119,5 +121,9 @@ export function saveFunnel(funnelData: unknown, funnelId?: string): string {
 
 export function deleteFunnel(id: string): void {
   const funnels = getSavedFunnels().filter(f => f.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(funnels));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(funnels));
+  } catch (e) {
+    console.error('Error deleting funnel', e);
+  }
 }
