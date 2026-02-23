@@ -44,8 +44,8 @@ Target Keywords: ${userConfig.mainKeyword} (Treat these as the core topics to co
 ${audienceContext}${toneInstruction}${regionalInstructions}
 
 **REQUIREMENTS:**
-1. Create a complete narrative (Hook, Problem, Solution, Mechanism, Value).
-2. **KEYWORD USAGE:** Naturally weave the "Target Keywords" into the story. Do not stuff them, but ensure the narrative touches on these themes.
+1. Create a complete narrative (Hook, Problem, Solution, Mechanism, Value, FAQs, Ingredients/Specs if applicable).
+2. **KEYWORD USAGE:** Naturally weave the "Target Keywords" into the story.
 3. Internally consistent and scientifically accurate.
 4. Approx 800-1200 words.
 
@@ -58,12 +58,15 @@ Respond with ONLY the narrative text.`;
 export function buildSlotGenerationPrompt(request: SlotGenerationRequest): string {
   const { slotType, coreNarrative, userConfig, slotInstructions, maxLength } = request;
 
-  return `Extract content from Narrative.
+  return `Extract OR Generate content based on the Narrative.
 
 Narrative: ${coreNarrative}
 Task: Write a ${slotType}.
 ${maxLength ? `MAX LENGTH: ${maxLength} chars.` : ''}
 ${slotInstructions || ''}
+
+**CRITICAL RULE:**
+If the exact details are missing from the narrative, **IMPROVISE** based on the product context ("${userConfig.productName}"). NEVER say "Content not available". Write the best possible copy.
 
 Response: ONLY content.`;
 }
@@ -121,12 +124,14 @@ export function buildMapNarrativeToSlotsPrompt(request: MapNarrativeToSlotsReque
     return `- "${field.slotId}" (Limit ${maxLen} chars): ${strictInstruction} → Target: ${safeWords} words → ${inferredType}`;
   }).join('\n');
 
-  const prompt = `You are a professional copywriter. Fill the slots below from the Core Narrative.
+  const prompt = `You are a professional copywriter. Fill the slots below using the Core Narrative as a base.
 
-**THE LAW OF FORMAT:**
-1. **LISTS:** If a slot says "LIST", you MUST return a plain text list separated by newlines (e.g. "- Item 1\n- Item 2"). NEVER write a paragraph for a list slot.
-2. **LABELS:** If a slot says "LABEL", write a 2-4 word fragment.
-3. **NO HTML:** Return plain text only.
+**THE GOLDEN RULES:**
+1. **IMPROVISE IF NEEDED:** If the Core Narrative is missing specific details for a slot (like "Ingredients" or "FAQ"), **INVENT plausible details** that fit the product ("${userConfig.productName}").
+2. **NEVER FAIL:** Do NOT return "Content not available" or "Missing info". You must write content for every single slot.
+3. **FORMATTING:** - **LISTS:** If a slot says "LIST", return a plain text list (e.g. "- Item 1").
+   - **LABELS:** If a slot says "LABEL", write a 2-4 word fragment.
+   - **NO HTML:** Return plain text only.
 
 **Core Narrative:**
 ${coreNarrative}
@@ -163,7 +168,7 @@ export function buildRegenerateSlotPrompt(request: RegenerateSlotRequest): strin
     taskInstruction = `Write a Paragraph. Target approx ${safeWords} words.`;
   }
 
-  return `Regenerate content for slot "${slotId}" from Narrative.
+  return `Regenerate content for slot "${slotId}".
 
 Narrative: ${coreNarrative}
 
@@ -171,6 +176,8 @@ Narrative: ${coreNarrative}
 - Max Characters: ${maxLength ?? 'None'}
 - Target Length: ~${safeWords} words
 - TASK: ${taskInstruction}
+
+**RULE:** If the narrative is missing data, **IMPROVISE** based on the context. Never return empty or error text.
 
 If target is < 5 words, write a LABEL (e.g. "Health Benefits") not a sentence.
 
