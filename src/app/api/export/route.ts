@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
 
     let files;
     const exportSlug = slug || 'funnel';
+    const safeSlug = exportSlug.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 50) || 'funnel';
     
     // Handle uploaded templates
     if (template && slotData) {
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
         // React export for uploaded templates not yet implemented
         return new Response('React export for uploaded templates is not yet supported', { status: 400 });
       } else if (exportFormat === "wordpress") {
-        files = buildWordPressUploadedTemplate(template, slotData, exportSlug);
+        files = buildWordPressUploadedTemplate(template, slotData, safeSlug);
       } else {
         // Default to static-html
         files = buildUploadedTemplateFiles(template, slotData);
@@ -43,9 +44,9 @@ export async function POST(request: NextRequest) {
     // Handle CreatineReport template
     else if (props) {
       if (exportFormat === "react-json") {
-        files = buildCreatineReportReactFiles(props, exportSlug);
+        files = buildCreatineReportReactFiles(props, safeSlug);
       } else if (exportFormat === "wordpress") {
-        files = buildWordPressTemplate(props, exportSlug);
+        files = buildWordPressTemplate(props, safeSlug);
       } else {
         // Default to static-html
         files = buildCreatineReportFiles(props);
@@ -55,10 +56,10 @@ export async function POST(request: NextRequest) {
     }
 
     const zipBytes = await buildZipFromFiles(files);
-    const filename = slug || 'funnel';
+    const filename = safeSlug;
 
     // Type assertion to satisfy TypeScript strict checking
-    return new Response(zipBytes.buffer as ArrayBuffer, {
+    return new Response(new Uint8Array(zipBytes), {
       status: 200,
       headers: {
         'Content-Type': 'application/zip',

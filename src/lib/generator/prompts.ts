@@ -198,9 +198,5 @@ export function extractJsonFromResponse(response: string): string {
 }
 
 export function sanitizeJsonString(jsonString: string): string {
-  return jsonString.replace(/[\u0000-\u001F]+/g, "");
-}
-
-export function repairJsonString(jsonString: string): string {
-  return jsonString;
+  return jsonString.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]+/g, "");
 }

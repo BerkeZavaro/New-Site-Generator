@@ -46,6 +46,7 @@ export async function optimizeImage(
     }
 
     img.onload = () => {
+      URL.revokeObjectURL(img.src);
       try {
         // Calculate new dimensions while maintaining aspect ratio
         let { width, height } = img;
@@ -81,7 +82,7 @@ export async function optimizeImage(
             }
 
             // If the blob is still too large, reduce quality further
-            if (blob.size > maxSizeKB * 1024 && outputFormat !== 'image/png') {
+            if (blob.size > maxSizeKB * 1024 && outputFormat !== 'image/png' && quality > 0.5) {
               // Recursively optimize with lower quality
               const lowerQuality = Math.max(0.5, quality - 0.1);
               optimizeImage(file, { ...options, quality: lowerQuality })
@@ -109,6 +110,7 @@ export async function optimizeImage(
     };
 
     img.onerror = () => {
+      URL.revokeObjectURL(img.src);
       reject(new Error('Failed to load image'));
     };
 

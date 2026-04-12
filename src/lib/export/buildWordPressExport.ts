@@ -27,8 +27,8 @@ export function buildWordPressTemplate(props: CreatineReportProps, slug: string)
   
   // Extract CSS from the HTML (it should be in a <style> tag or linked)
   // For now, we'll create a separate CSS file
-  const cssMatch = htmlContent.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
-  const cssContent = cssMatch ? cssMatch[1] : '';
+  const cssMatches = htmlContent.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi);
+  const cssContent = Array.from(cssMatches).map(m => m[1]).join('\n');
 
   // Create WordPress PHP template
   const phpTemplate = `<?php

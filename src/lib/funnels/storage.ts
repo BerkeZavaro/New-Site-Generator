@@ -75,7 +75,7 @@ export function duplicateFunnel(id: string): FunnelConfig | null {
   // Create a duplicate with new ID and name
   const duplicate: FunnelConfig = {
     ...original,
-    id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
     name: `${original.name} (Copy)`,
     createdAt: new Date().toISOString(),
   };

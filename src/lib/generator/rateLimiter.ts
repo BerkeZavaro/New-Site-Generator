@@ -151,16 +151,3 @@ export const rateLimiter = new RateLimiter({
   maxRequestsPerMinute: 50, // Conservative limit (Google free tier is ~60/min)
   maxRequestsPerSecond: 2, // Increased for serverless - each function is isolated
 });
-
-
-
-
-
-
-
-
-
-
-
-
-

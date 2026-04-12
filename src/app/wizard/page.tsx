@@ -165,6 +165,10 @@ function WizardPageContent() {
           tone: data.tone,
         }),
       });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error (${res.status})`);
+      }
       const result = await res.json();
       if (result.coreNarrative) updateField('coreNarrative', result.coreNarrative);
     } catch (e) {
@@ -194,6 +198,10 @@ function WizardPageContent() {
           templateSlots: selected.slots,
         }),
       });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error (${res.status})`);
+      }
       const result = await res.json();
       if (result.slots) {
         setData(prev => ({ ...prev, slotData: { ...(prev.slotData || {}), ...result.slots } }));
@@ -227,6 +235,10 @@ function WizardPageContent() {
           maxLength,
         }),
       });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error (${res.status})`);
+      }
       const result = await res.json();
       if (result.content) {
         setData(prev => ({

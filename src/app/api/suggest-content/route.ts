@@ -3,11 +3,10 @@ import { GoogleGeminiProvider } from '@/lib/generator/ContentGenerator';
 
 const GOOGLE_AI_API_KEY = process.env.GOOGLE_AI_API_KEY;
 
-if (!GOOGLE_AI_API_KEY) {
-  throw new Error('GOOGLE_AI_API_KEY is not set in environment variables');
-}
-
 export async function POST(request: NextRequest) {
+  if (!GOOGLE_AI_API_KEY) {
+    return Response.json({ success: false, error: 'GOOGLE_AI_API_KEY is not configured' }, { status: 500 });
+  }
   try {
     const body = await request.json();
     const {
@@ -109,26 +108,14 @@ Provide ONLY valid JSON, no additional text or markdown formatting.`;
         suggestionsData = JSON.parse(response);
       }
     } catch (parseError) {
-      // If parsing fails, create fallback suggestions
       console.error('Failed to parse suggestions response:', parseError);
-      suggestionsData = {
-        suggestions: [
-          currentContent + ' (Enhanced)',
-          currentContent + ' (Optimized)',
-          currentContent + ' (Improved)',
-        ],
-        improvements: [
-          'More engaging language',
-          'Better keyword placement',
-          'Stronger call-to-action',
-        ],
-        reasoning: 'AI response parsing failed, showing fallback suggestions',
-      };
-    }
-
-    // Ensure we have valid suggestions
-    if (!suggestionsData.suggestions || !Array.isArray(suggestionsData.suggestions)) {
-      suggestionsData.suggestions = [currentContent];
+      return Response.json({
+        success: false,
+        error: 'Failed to parse AI suggestions. Please try again.',
+        suggestions: [],
+        improvements: [],
+        reasoning: '',
+      });
     }
 
     return Response.json({

@@ -3,10 +3,6 @@ import { GoogleGeminiProvider } from '@/lib/generator/ContentGenerator';
 
 const GOOGLE_AI_API_KEY = process.env.GOOGLE_AI_API_KEY;
 
-if (!GOOGLE_AI_API_KEY) {
-  throw new Error('GOOGLE_AI_API_KEY is not set in environment variables');
-}
-
 interface ValidationCheck {
   field: string;
   fieldLabel: string;
@@ -98,6 +94,9 @@ function calculateReadabilityScore(text: string): number {
 }
 
 export async function POST(request: NextRequest) {
+  if (!GOOGLE_AI_API_KEY) {
+    return Response.json({ success: false, error: 'GOOGLE_AI_API_KEY is not configured' }, { status: 500 });
+  }
   try {
     const body = await request.json();
     const {
