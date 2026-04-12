@@ -13,6 +13,10 @@ export interface DetectSlotsResult {
 export function detectSlots(htmlBody: string): DetectSlotsResult {
   if (!htmlBody || typeof htmlBody !== 'string') return { htmlBody: '', slots: [] };
 
+  if (typeof DOMParser === 'undefined') {
+    return { htmlBody: htmlBody || '', slots: [] };
+  }
+
   let doc: Document;
   try {
     const parser = new DOMParser();

@@ -7,10 +7,13 @@ interface MergeRequest {
 }
 
 export function mergeHtml(request: MergeRequest): string {
+  if (typeof DOMParser === 'undefined') {
+    console.warn('mergeHtml: DOMParser not available (server-side). Returning raw HTML.');
+    return request.template.htmlBody || '';
+  }
   const { template, textData, imageData } = request;
 
   if (!template.htmlBody) return '';
-
   // 1. Parse the Master Shell
   let doc: Document;
   try {
@@ -20,7 +23,6 @@ export function mergeHtml(request: MergeRequest): string {
     console.error("Failed to parse template HTML");
     return template.htmlBody;
   }
-
   // 2. Inject Content
   template.slots.forEach(slot => {
     const element = doc.querySelector(`[data-slot="${slot.id}"]`);

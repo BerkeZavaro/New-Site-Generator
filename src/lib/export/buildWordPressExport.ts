@@ -30,6 +30,15 @@ export function buildWordPressTemplate(props: CreatineReportProps, slug: string)
   const cssMatches = htmlContent.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi);
   const cssContent = Array.from(cssMatches).map(m => m[1]).join('\n');
 
+  // Sanitize HTML content to prevent PHP injection
+  const sanitizedBody = htmlContent
+    .replace(/<!DOCTYPE html>[\s\S]*?<body[^>]*>/i, '')
+    .replace(/<\/body>[\s\S]*?<\/html>/i, '')
+    .replace(/<\?php/gi, '&lt;?php')
+    .replace(/<\?=/gi, '&lt;?=')
+    .replace(/<\?/g, '&lt;?')
+    .replace(/\?>/g, '?&gt;');
+
   // Create WordPress PHP template
   const phpTemplate = `<?php
 /**
@@ -57,7 +66,7 @@ $overall_rating = get_post_meta(get_the_ID(), 'overall_rating', true) ?: '${prop
 ?>
 
 <div class="creatine-funnel-container">
-  ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*?<\/html>/i, '')}
+  ${sanitizedBody}
 </div>
 
 <?php

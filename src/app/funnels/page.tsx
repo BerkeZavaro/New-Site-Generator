@@ -3,17 +3,17 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FunnelConfig } from '@/lib/funnels/types';
-import { loadFunnels, deleteFunnel, duplicateFunnel } from '@/lib/funnels/storage';
+import { getSavedFunnels, deleteFunnel, duplicateFunnel } from '@/lib/savedFunnelStorage';
+import type { SavedFunnel } from '@/lib/savedFunnelStorage';
 import { TEMPLATES } from '@/lib/templates/registry';
 
 export default function FunnelsPage() {
   const router = useRouter();
-  const [funnels, setFunnels] = useState<FunnelConfig[]>([]);
+  const [funnels, setFunnels] = useState<SavedFunnel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const loaded = loadFunnels();
+    const loaded = getSavedFunnels();
     setFunnels(loaded);
     setIsLoading(false);
   }, []);
@@ -26,7 +26,7 @@ export default function FunnelsPage() {
     const duplicated = duplicateFunnel(funnelId);
     if (duplicated) {
       // Reload funnels to show the new duplicate
-      const loaded = loadFunnels();
+      const loaded = getSavedFunnels();
       setFunnels(loaded);
       // Optionally navigate to the duplicated funnel
       router.push(`/wizard?id=${encodeURIComponent(duplicated.id)}`);
@@ -36,24 +36,19 @@ export default function FunnelsPage() {
   const handleDelete = (funnelId: string) => {
     if (confirm('Are you sure you want to delete this funnel? This action cannot be undone.')) {
       deleteFunnel(funnelId);
-      const loaded = loadFunnels();
+      const loaded = getSavedFunnels();
       setFunnels(loaded);
     }
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateInput: string | number) => {
     try {
-      const date = new Date(dateString);
+      const date = new Date(dateInput);
       return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
       });
-    } catch {
-      return dateString;
-    }
+    } catch { return String(dateInput); }
   };
 
   return (
@@ -99,11 +94,11 @@ export default function FunnelsPage() {
                 </thead>
                 <tbody>
                   {funnels.map((funnel) => {
-                    const template = TEMPLATES.find((t) => t.id === funnel.templateId);
+                    const template = TEMPLATES.find((t) => t.id === funnel.data?.templateId);
                     return (
                       <tr key={funnel.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="py-4 px-4 font-medium text-gray-900">{funnel.name}</td>
-                        <td className="py-4 px-4 text-gray-600">{funnel.mainKeyword || '—'}</td>
+                        <td className="py-4 px-4 text-gray-600">{funnel.data?.mainKeyword || '—'}</td>
                         <td className="py-4 px-4 text-gray-600">
                           {template?.name || 'Unknown'}
                         </td>

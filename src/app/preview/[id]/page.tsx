@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getFunnelById, upsertFunnel } from '@/lib/funnels/storage';
-import { FunnelConfig } from '@/lib/funnels/types';
+import { getFunnelById, saveFunnel } from '@/lib/savedFunnelStorage';
+import type { SavedFunnel } from '@/lib/savedFunnelStorage';
 import type { CreatineReportProps } from '@/components/templates/CreatineReportTemplate';
 import { buildCreatineReportHtml } from '@/lib/export/buildStaticHtml';
 import { TEMPLATES } from '@/lib/templates/registry';
@@ -19,7 +19,7 @@ export default function EnhancedPreviewPage() {
   const router = useRouter();
   const funnelId = params.id as string;
   
-  const [funnel, setFunnel] = useState<FunnelConfig | null>(null);
+  const [funnel, setFunnel] = useState<SavedFunnel | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('desktop');
   const [editMode, setEditMode] = useState<EditMode>('preview');
   const [editedContent, setEditedContent] = useState<Record<string, string>>({});
@@ -39,9 +39,10 @@ export default function EnhancedPreviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [funnelId]);
 
-  const generatePreview = (funnelData: FunnelConfig) => {
+  const generatePreview = (funnelData: SavedFunnel) => {
     try {
-      const template = TEMPLATES.find(t => t.id === funnelData.templateId);
+      const d = funnelData.data ?? {};
+      const template = TEMPLATES.find(t => t.id === d.templateId);
       
       if (template?.id === 'creatine-report') {
         // Build preview props for CreatineReport
@@ -53,10 +54,10 @@ export default function EnhancedPreviewPage() {
         const uploadedTemplates = JSON.parse(
           localStorage.getItem('site-generator:uploaded-templates') || '[]'
         ) as UploadedTemplate[];
-        const uploadedTemplate = uploadedTemplates.find(t => t.id === funnelData.templateId);
+        const uploadedTemplate = uploadedTemplates.find(t => t.id === d.templateId);
         
         if (uploadedTemplate) {
-          const files = buildUploadedTemplateFiles(uploadedTemplate, funnelData.slotData || {});
+          const files = buildUploadedTemplateFiles(uploadedTemplate, (d.slotData as Record<string, string>) || {});
           const htmlFile = files.find(f => f.path === 'index.html');
           if (htmlFile) {
             setPreviewHtml(htmlFile.contents);
@@ -70,64 +71,74 @@ export default function EnhancedPreviewPage() {
     }
   };
 
-  const buildPreviewProps = (funnelData: FunnelConfig): CreatineReportProps => {
-    const breadcrumb = `Creatine Product Buyer's Guide > ${funnelData.productName || 'Supplement Review'}`;
-    const pageTitle = funnelData.pageHeadline || funnelData.productName || 'Creatine Supplement Review';
+  const buildPreviewProps = (saved: SavedFunnel): CreatineReportProps => {
+    const d = saved.data ?? {};
+    const productName = (d.productName as string | undefined) || '';
+    const breadcrumb = `Creatine Product Buyer's Guide > ${productName || 'Supplement Review'}`;
+    const pageTitle = (d.pageHeadline as string | undefined) || productName || 'Creatine Supplement Review';
     
-    let mainLead = funnelData.introParagraph || '';
+    let mainLead = (d.introParagraph as string | undefined) || '';
     if (!mainLead) {
-      const keywordText = funnelData.mainKeyword ? ` about ${funnelData.mainKeyword}` : '';
-      mainLead = `${funnelData.productName || 'This creatine supplement'} is a high-quality product${keywordText}.`;
+      const mainKeyword = d.mainKeyword as string | undefined;
+      const keywordText = mainKeyword ? ` about ${mainKeyword}` : '';
+      mainLead = `${productName || 'This creatine supplement'} is a high-quality product${keywordText}.`;
     }
 
-    const mainBenefits = (funnelData.mainBenefits || '')
+    const mainBenefits = ((d.mainBenefits as string | undefined) || '')
       .split('\n')
       .map(b => b.trim().replace(/^[•\-\*]\s*/, ''))
       .filter(b => b !== '');
 
-    const effectivenessParagraphs = (funnelData.effectivenessParagraphs || '')
+    const effectivenessParagraphs = ((d.effectivenessParagraphs as string | undefined) || '')
       .split('\n')
       .filter(p => p.trim() !== '');
 
-    const comparisonParagraphs = (funnelData.comparisonParagraphs || '')
+    const comparisonParagraphs = ((d.comparisonParagraphs as string | undefined) || '')
       .split('\n')
       .filter(p => p.trim() !== '');
 
-    const reviewParagraphs = (funnelData.reviewParagraphs || '')
+    const reviewParagraphs = ((d.reviewParagraphs as string | undefined) || '')
       .split('\n')
       .filter(p => p.trim() !== '');
 
-    const sidebarDiscoverItems = (funnelData.sidebarDiscoverItems || '')
+    const sidebarDiscoverItems = ((d.sidebarDiscoverItems as string | undefined) || '')
       .split('\n')
       .filter(i => i.trim() !== '');
 
-    const sidebarTopItems = (funnelData.sidebarTopItems || '')
+    const sidebarTopItems = ((d.sidebarTopItems as string | undefined) || '')
       .split('\n')
       .filter(i => i.trim() !== '');
+
+    const ratings = d.ratings as {
+      customerService?: string;
+      valueRating?: string;
+      customerRating?: string;
+      overallRating?: string;
+    } | undefined;
 
     return {
       breadcrumb,
       pageTitle,
       updatedTag: `Last updated: ${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`,
-      productName: funnelData.productName,
-      productImageAlt: `${funnelData.productName} Product Image`,
+      productName,
+      productImageAlt: `${productName} Product Image`,
       mainLead,
       mainBenefits: mainBenefits.length > 0 ? mainBenefits : ['Benefit 1', 'Benefit 2', 'Benefit 3'],
       effectivenessParagraphs: effectivenessParagraphs.length > 0 ? effectivenessParagraphs : ['Effectiveness paragraph'],
       comparisonParagraphs: comparisonParagraphs.length > 0 ? comparisonParagraphs : ['Comparison paragraph'],
       reviewParagraphs: reviewParagraphs.length > 0 ? reviewParagraphs : ['Review paragraph'],
-      bottomLineParagraph: funnelData.bottomLineParagraph || 'Bottom line paragraph',
+      bottomLineParagraph: (d.bottomLineParagraph as string | undefined) || 'Bottom line paragraph',
       ratings: {
-        customerService: parseFloat(funnelData.ratings?.customerService || '5'),
-        valueRating: parseFloat(funnelData.ratings?.valueRating || '5'),
-        customerRating: parseFloat(funnelData.ratings?.customerRating || '5'),
-        overallRating: parseFloat(funnelData.ratings?.overallRating || '5'),
+        customerService: parseFloat(ratings?.customerService || '5'),
+        valueRating: parseFloat(ratings?.valueRating || '5'),
+        customerRating: parseFloat(ratings?.customerRating || '5'),
+        overallRating: parseFloat(ratings?.overallRating || '5'),
       },
-      productUrl: funnelData.productUrl,
+      productUrl: (d.productUrl as string | undefined) || '',
       sidebarDiscoverItems: sidebarDiscoverItems.length > 0 ? sidebarDiscoverItems : ['Item 1', 'Item 2'],
       sidebarTopItems: sidebarTopItems.length > 0 ? sidebarTopItems : ['Item 1', 'Item 2'],
-      newsletterTitle: funnelData.newsletterTitle || 'Stay Updated',
-      newsletterDesc: funnelData.newsletterDesc || 'Get the latest updates delivered to your inbox.',
+      newsletterTitle: (d.newsletterTitle as string | undefined) || 'Stay Updated',
+      newsletterDesc: (d.newsletterDesc as string | undefined) || 'Get the latest updates delivered to your inbox.',
     };
   };
 
@@ -135,13 +146,14 @@ export default function EnhancedPreviewPage() {
     setEditedContent(prev => ({ ...prev, [fieldId]: value }));
     // Update funnel data immediately
     if (funnel) {
-      const updated = { ...funnel };
-      // Update field if it exists in funnel config, otherwise update slotData
-      const fieldValue = (updated as Record<string, unknown>)[fieldId];
-      if (fieldId in updated && typeof fieldValue === 'string') {
-        (updated as Record<string, unknown>)[fieldId] = value;
-      } else if (updated.slotData) {
-        updated.slotData[fieldId] = value;
+      const updated = { ...funnel, data: { ...funnel.data } };
+      if (updated.data && fieldId in updated.data && fieldId !== 'slotData') {
+        (updated.data as Record<string, unknown>)[fieldId] = value;
+      } else if (updated.data) {
+        updated.data = {
+          ...updated.data,
+          slotData: { ...((updated.data.slotData as Record<string, string> | undefined) || {}), [fieldId]: value },
+        };
       }
       setFunnel(updated);
       generatePreview(updated);
@@ -150,8 +162,20 @@ export default function EnhancedPreviewPage() {
 
   const handleSave = () => {
     if (funnel) {
-      const updated = { ...funnel, ...editedContent };
-      upsertFunnel(updated);
+      const mergedData = { ...funnel.data };
+      for (const [fieldId, value] of Object.entries(editedContent)) {
+        if (fieldId in mergedData && fieldId !== 'slotData') {
+          (mergedData as Record<string, unknown>)[fieldId] = value;
+        } else {
+          mergedData.slotData = { ...(mergedData.slotData || {}), [fieldId]: value };
+        }
+      }
+      const updated: SavedFunnel = {
+        ...funnel,
+        data: mergedData,
+        updatedAt: Date.now(),
+      };
+      saveFunnel(updated.data, updated.id);
       setFunnel(updated);
       setEditMode('preview');
       setEditedContent({});

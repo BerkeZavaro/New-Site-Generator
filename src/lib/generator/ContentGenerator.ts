@@ -103,9 +103,14 @@ export class GoogleGeminiProvider implements AIModelProvider {
           error.message?.includes('Too Many Requests') ||
           error.message?.includes('rate limit') ||
           error.message?.includes('quota') ||
+          error.message?.includes('503') ||
+          error.message?.includes('Service Unavailable') ||
           error.status === 429 ||
           error.code === 429 ||
-          error.statusCode === 429) {
+          error.statusCode === 429 ||
+          error.status === 503 ||
+          error.code === 503 ||
+          error.statusCode === 503) {
         console.log(`⚠️ Rate limit hit for ${modelName}, waiting before retry...`);
         
         // Calculate retry delay with exponential backoff
@@ -178,9 +183,10 @@ export class GoogleGeminiProvider implements AIModelProvider {
  * - FAST_MODEL (gemini-2.5-flash): For fast extraction tasks (slots, mapping)
  */
 export class ContentGenerator {
+  // Both set to flash for free tier. Change CREATIVE_MODEL to 'gemini-2.5-pro' if on a paid plan.
   // Model constants for Hybrid Model Strategy
-  private static readonly CREATIVE_MODEL = 'gemini-2.5-pro'; // High-quality reasoning (gemini-1.5-pro was shut down Sep 2025)
-  private static readonly FAST_MODEL = 'gemini-2.5-flash';   // Speed/extraction (updated from deprecated gemini-2.0-flash)
+  private static readonly CREATIVE_MODEL = 'gemini-2.5-flash';
+  private static readonly FAST_MODEL = 'gemini-2.5-flash';
   
   private aiProvider: AIModelProvider;
   private modelConfig: AIModelConfig;

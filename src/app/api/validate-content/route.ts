@@ -201,7 +201,7 @@ Analyze the following content and provide quality scores and feedback.
 Provide ONLY valid JSON, no markdown.`;
 
         const aiResponse = await aiProvider.generateText(prompt, {
-          modelName: 'gemini-3-pro-preview',
+          modelName: 'gemini-2.5-flash',
           apiKey: GOOGLE_AI_API_KEY!,
           temperature: 0.3,
           maxTokens: 500,

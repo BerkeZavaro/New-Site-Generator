@@ -91,7 +91,7 @@ ${fieldType === 'list' ? '6. Make each item clear and impactful' : ''}
 Provide ONLY valid JSON, no additional text or markdown formatting.`;
 
     const response = await aiProvider.generateText(prompt, {
-      modelName: 'gemini-3-pro-preview',
+      modelName: 'gemini-2.5-flash',
       apiKey: GOOGLE_AI_API_KEY!,
       temperature: 0.7,
       maxTokens: 1000,

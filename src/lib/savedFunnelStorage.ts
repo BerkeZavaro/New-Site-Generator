@@ -127,3 +127,27 @@ export function deleteFunnel(id: string): void {
     console.error('Error deleting funnel', e);
   }
 }
+
+export function duplicateFunnel(id: string): SavedFunnel | null {
+  const funnels = getSavedFunnels();
+  const original = funnels.find(f => f.id === id);
+  if (!original) return null;
+
+  const now = Date.now();
+  const duplicate: SavedFunnel = {
+    id: generateId(),
+    name: `${original.name} (Copy)`,
+    createdAt: now,
+    updatedAt: now,
+    data: { ...original.data },
+  };
+
+  const updated = [duplicate, ...funnels];
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  } catch (error) {
+    console.error('Failed to duplicate funnel:', error);
+    return null;
+  }
+  return duplicate;
+}
