@@ -15,9 +15,9 @@ type ViewMode = 'desktop' | 'mobile' | 'side-by-side';
 type EditMode = 'preview' | 'edit';
 
 export default function EnhancedPreviewPage() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
   const router = useRouter();
-  const funnelId = params.id as string;
+  const id = params.id;
   
   const [funnel, setFunnel] = useState<SavedFunnel | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('desktop');
@@ -27,8 +27,8 @@ export default function EnhancedPreviewPage() {
   const [previewHtml, setPreviewHtml] = useState<string>('');
 
   useEffect(() => {
-    if (funnelId) {
-      const loaded = getFunnelById(funnelId);
+    if (id) {
+      const loaded = getFunnelById(id);
       if (loaded) {
         setFunnel(loaded);
         generatePreview(loaded);
@@ -37,7 +37,7 @@ export default function EnhancedPreviewPage() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [funnelId]);
+  }, [id]);
 
   const generatePreview = (funnelData: SavedFunnel) => {
     try {
@@ -277,7 +277,7 @@ export default function EnhancedPreviewPage() {
               )}
 
               <button
-                onClick={() => router.push(`/wizard?id=${funnelId}`)}
+                onClick={() => router.push(`/wizard?id=${id}`)}
                 className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
               >
                 🔧 Full Edit

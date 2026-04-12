@@ -29,27 +29,30 @@ export function mergeHtml(request: MergeRequest): string {
     if (!element) return;
 
     // --- TEXT INJECTION ---
-    if (textData[slot.id]) {
+    if (textData[slot.id] && slot.type !== 'image') {
       if (slot.type === 'list') {
         const items = textData[slot.id].split('\n').filter(i => i.trim());
 
-        // Smart List Styling: Check if we saved a pattern (like checkmarks)
         if (slot.listTemplate && slot.listTemplate.includes('{{CONTENT}}')) {
           const htmlItems = items.map(item => {
-            const cleanItemText = item.replace(/^[\d+\.•*-]+\s*/, '');
+            const cleanItemText = item.replace(/^[\d+\.•*\-]+\s*/, '');
             const styledContent = slot.listTemplate!.replace('{{CONTENT}}', cleanItemText);
             return `<li>${styledContent}</li>`;
           }).join('');
           element.innerHTML = htmlItems;
         } else {
           const htmlItems = items.map(item => {
-            const cleanItemText = item.replace(/^[\d+\.•*-]+\s*/, '');
+            const cleanItemText = item.replace(/^[\d+\.•*\-]+\s*/, '');
             return `<li>${cleanItemText}</li>`;
           }).join('');
           element.innerHTML = htmlItems;
         }
+      } else if (slot.type === 'cta') {
+        // For CTAs (buttons, links), update text but preserve the element and its href
+        element.textContent = textData[slot.id];
       } else {
-        // Normal text (Headlines, Paragraphs)
+        // Headlines, subheadlines, paragraphs — works for any element type
+        // (p, div, span, h1-h6, blockquote, figcaption, td, th, etc.)
         element.textContent = textData[slot.id];
       }
     }
@@ -58,12 +61,14 @@ export function mergeHtml(request: MergeRequest): string {
     if (slot.type === 'image') {
       let finalSrc = '';
 
-      // Priority 1: User provided a new image in Image Studio
+      // Priority 1: User provided a new image
       if (imageData[slot.id]) {
         finalSrc = imageData[slot.id];
       } else {
-        // Priority 2: Fallback to original, BUT CHECK FOR JUNK
-        const originalSrc = element.getAttribute('src') || '';
+        // Priority 2: Fallback to original, but check for junk
+        const imgElement = element.tagName.toLowerCase() === 'img' ? element :
+                           element.querySelector('img');
+        const originalSrc = imgElement?.getAttribute('src') || element.getAttribute('src') || '';
 
         if (isJunkUrl(originalSrc)) {
           const w = slot.width || 300;
@@ -75,9 +80,16 @@ export function mergeHtml(request: MergeRequest): string {
       }
 
       if (finalSrc) {
-        element.setAttribute('src', finalSrc);
-        // CRITICAL: Remove 'srcset' to prevent broken local paths from overriding
-        element.removeAttribute('srcset');
+        // Handle both <img> directly and <picture> or wrapper elements
+        const imgElement = element.tagName.toLowerCase() === 'img' ? element :
+                           element.querySelector('img');
+        if (imgElement) {
+          imgElement.setAttribute('src', finalSrc);
+          imgElement.removeAttribute('srcset');
+        } else {
+          element.setAttribute('src', finalSrc);
+          element.removeAttribute('srcset');
+        }
       }
     }
   });

@@ -474,11 +474,18 @@ function WizardPageContent() {
                       return (
                         <div key={slot.id} className="relative">
                           <div className="flex justify-between items-center mb-1">
-                            <div className="flex items-center gap-2">
-                              <label className="font-medium text-gray-900">{slot.label}</label>
-                              <span className="text-xs text-gray-400 font-mono uppercase border border-gray-200 px-1 rounded bg-gray-50">
-                                {slot.type}
-                              </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <label className="font-medium text-gray-900 truncate">{slot.label}</label>
+                                <span className="text-xs text-gray-400 font-mono uppercase border border-gray-200 px-1 rounded bg-gray-50 flex-shrink-0">
+                                  {slot.type}
+                                </span>
+                              </div>
+                              {slot.originalContent && slot.type !== 'image' && (
+                                <p className="text-xs text-gray-400 mt-0.5 truncate" title={slot.originalContent}>
+                                  Original: {slot.originalContent.length > 90 ? slot.originalContent.substring(0, 90) + '...' : slot.originalContent}
+                                </p>
+                              )}
                             </div>
                             {data.coreNarrative && (
                               <button

@@ -1,24 +1,25 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { loadUploadedTemplates } from "@/lib/templates/uploadedStorage";
 import type { UploadedTemplate } from "@/lib/templates/uploadedTypes";
 import { UploadedTemplatePreview } from "@/components/templates/UploadedTemplatePreview";
 
-export default function UploadedTemplatePreviewPage({ params }: { params: { id: string } }) {
+export default function UploadedTemplatePreviewPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const [template, setTemplate] = useState<UploadedTemplate | null>(null);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     const templates = loadUploadedTemplates();
-    const found = templates.find((t) => t.id === params.id);
+    const found = templates.find((t) => t.id === id);
     if (found) {
       setTemplate(found);
     } else {
       setNotFound(true);
     }
-  }, [params.id]);
+  }, [id]);
 
   if (notFound) {
     return (

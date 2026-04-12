@@ -1,6 +1,7 @@
 /**
- * Slot Detection Utility - MASTER SHELL CREATOR
- * Updated to FILTER JUNK (Nav, Footer, Legal), detect LISTS, and parse CSS IMAGE SIZES.
+ * Slot Detection Utility - TEMPLATE-AGNOSTIC
+ * Detects editable content slots in any HTML template.
+ * Works with semantic HTML, div-heavy layouts, tables, and mixed structures.
  */
 
 import type { TemplateSlot, SlotType } from './types';
@@ -10,9 +11,234 @@ export interface DetectSlotsResult {
   slots: TemplateSlot[];
 }
 
+// --- JUNK DETECTION ---
+
+const JUNK_CONTAINER_SELECTORS = [
+  'nav', 'footer', 'header',
+  '.nav', '.navbar', '.menu', '.footer', '.header',
+  '.cookie', '.popup', '.modal', '.overlay', '.widget',
+  '.legal', '.copyright', '.disclaimer', '.privacy',
+  '.social', '.share', '.sidebar-widget',
+  '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+  '.share-buttons', '.social-share', '.modal', '.modal-content',
+  '.mobSearch', '[role="search"]',
+].join(', ');
+
+const JUNK_PHRASES = new Set([
+  'read more', 'click here', 'privacy policy', 'terms of service',
+  'contact us', 'all rights reserved', 'submit', 'cookie', 'accept cookies',
+  'subscribe', 'follow us', 'share this', 'powered by', 'back to top',
+  'copyright', 'terms & conditions', 'terms and conditions',
+]);
+
+function isInsideJunkContainer(element: Element): boolean {
+  return element.closest(JUNK_CONTAINER_SELECTORS) !== null;
+}
+
+function isJunkText(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  if (JUNK_PHRASES.has(lower)) return true;
+  // Very short single-word navigation-style text
+  if (lower.length < 4 && !lower.match(/^\d/)) return true;
+  return false;
+}
+
+function isJunkUrl(url: string): boolean {
+  if (!url) return true;
+  const lower = url.toLowerCase();
+  return (
+    lower.includes('googletagmanager.com') ||
+    lower.includes('google-analytics.com') ||
+    lower.includes('facebook.net') ||
+    lower.includes('file://') ||
+    lower.includes('_files/') ||
+    lower.includes('localhost') ||
+    lower.includes('127.0.0.1') ||
+    lower.includes('data:image/gif') ||
+    lower.includes('1x1') ||
+    lower.includes('pixel') ||
+    lower.includes('tracking')
+  );
+}
+
+// --- CONTENT AREA DETECTION ---
+
+function findMainContent(root: Element): Element {
+  const candidates = Array.from(root.querySelectorAll('div, article, section, main, [role="main"]'));
+  let bestCandidate = root;
+  let maxScore = 0;
+
+  for (const node of candidates) {
+    const className = (node.getAttribute('class') || '').toLowerCase();
+    const idName = (node.getAttribute('id') || '').toLowerCase();
+    const role = (node.getAttribute('role') || '').toLowerCase();
+
+    // Skip known junk containers
+    const skip = ['footer', 'header', 'nav', 'menu', 'popup', 'modal', 'cookie',
+                  'widget', 'legal', 'copyright', 'bottom-bar', 'disclaimer',
+                  'sidebar', 'social', 'share', 'comment'];
+    if (skip.some(term => className.includes(term) || idName.includes(term))) continue;
+
+    // Bonus for semantic hints
+    let bonus = 0;
+    if (node.tagName.toLowerCase() === 'main' || role === 'main') bonus += 10;
+    if (node.tagName.toLowerCase() === 'article') bonus += 5;
+    if (className.includes('content') || idName.includes('content')) bonus += 5;
+    if (className.includes('main') || idName.includes('main')) bonus += 3;
+    if (className.includes('article') || className.includes('post') || className.includes('entry')) bonus += 3;
+
+    // Score based on ALL text-containing elements, not just <p>
+    const textElements = node.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote, figcaption, td, th');
+    const divTexts = Array.from(node.querySelectorAll('div, span')).filter(el => {
+      const text = el.textContent?.trim() || '';
+      return text.length > 30 && el.children.length === 0; // Leaf divs/spans with real text
+    });
+
+    const paras = node.querySelectorAll('p').length;
+    const headers = node.querySelectorAll('h1, h2, h3, h4, h5, h6').length;
+    const lists = node.querySelectorAll('ul, ol').length;
+    const images = node.querySelectorAll('img').length;
+
+    const score = paras * 2 + headers * 3 + lists + images * 0.5 + divTexts.length + textElements.length + bonus;
+
+    if (score > maxScore) {
+      maxScore = score;
+      bestCandidate = node;
+    }
+  }
+
+  return bestCandidate;
+}
+
+// --- ELEMENT CLASSIFICATION ---
+
+function classifyElement(element: Element, text: string): SlotType | null {
+  const tag = element.tagName.toLowerCase();
+
+  // Direct tag-based classification
+  if (tag === 'img' || tag === 'picture') return 'image';
+  if (tag === 'ul' || tag === 'ol') return 'list';
+  if (tag === 'h1') return 'headline';
+  if (tag === 'h2') return 'headline';
+  if (tag === 'h3' || tag === 'h4' || tag === 'h5' || tag === 'h6') return 'subheadline';
+  if (tag === 'blockquote') return 'paragraph';
+  if (tag === 'figcaption') return 'paragraph';
+
+  // Button/CTA detection
+  if (tag === 'button') return 'cta';
+  if (tag === 'a') {
+    const className = (element.getAttribute('class') || '').toLowerCase();
+    if (className.includes('btn') || className.includes('button') || className.includes('cta')) {
+      return 'cta';
+    }
+  }
+
+  // For <p>, <div>, <span>, <td> — classify by text length and context
+  const len = text.length;
+  if (len < 5) return null; // Too short to be useful
+
+  if (tag === 'p') {
+    if (len < 50) return 'subheadline';
+    return 'paragraph';
+  }
+
+  if (tag === 'div' || tag === 'span' || tag === 'td' || tag === 'th') {
+    // Check if this is a leaf text node (no children with substantial text)
+    const childElements = Array.from(element.children);
+    const hasTextChildren = childElements.some(child => {
+      const childTag = child.tagName.toLowerCase();
+      return ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'div', 'span'].includes(childTag) &&
+             (child.textContent?.trim().length || 0) > 10;
+    });
+
+    // Skip container divs — we'll catch their children instead
+    if (hasTextChildren) return null;
+
+    // Skip table cells that are just spacing or very short structural text
+    if ((tag === 'td' || tag === 'th') && len < 40) return null;
+
+    // Skip tiny structural divs/spans (author info, labels, badges under 30 chars)
+    if ((tag === 'div' || tag === 'span') && len < 40) {
+      // Exception: allow if it has headline-like styling hints
+      const className = (element.getAttribute('class') || '').toLowerCase();
+      const style = (element.getAttribute('style') || '').toLowerCase();
+      const headlineHints = className.includes('title') || className.includes('heading') ||
+                            className.includes('headline') || className.includes('header') ||
+                            style.includes('font-size: 2') || style.includes('font-size: 3') ||
+                            style.includes('font-size:2') || style.includes('font-size:3') ||
+                            style.includes('font-size: 18') || style.includes('font-size:18') ||
+                            style.includes('font-size: 22') || style.includes('font-size:22');
+      if (!headlineHints) return null;
+    }
+
+    // Classify based on text length and styling hints
+    const className = (element.getAttribute('class') || '').toLowerCase();
+    const style = (element.getAttribute('style') || '').toLowerCase();
+
+    const headlineHints = className.includes('title') || className.includes('heading') ||
+                          className.includes('headline') || className.includes('header') ||
+                          style.includes('font-size: 2') || style.includes('font-size: 3') ||
+                          style.includes('font-size:2') || style.includes('font-size:3') ||
+                          style.includes('font-size: 18') || style.includes('font-size:18') ||
+                          style.includes('font-size: 22') || style.includes('font-size:22');
+
+    if (headlineHints && len < 150) return 'headline';
+    if (len < 80) return 'subheadline';
+    if (len >= 80) return 'paragraph';
+  }
+
+  return null;
+}
+
+// --- LABEL & ID GENERATION ---
+
+function generateReadableLabel(text: string, type: SlotType, index: number): string {
+  if (type === 'image') {
+    return `Image ${index + 1}`;
+  }
+  // Use first 70 chars of original text as label
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= 70) return clean;
+  // Cut at word boundary
+  const cut = clean.substring(0, 70);
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace > 40 ? cut.substring(0, lastSpace) : cut) + '...';
+}
+
+function generateSlotId(text: string, type: SlotType, existingIds: Set<string>): string {
+  let baseId = '';
+
+  if (type === 'image') {
+    const alt = text || 'image';
+    baseId = alt.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 25);
+  } else {
+    baseId = text.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 40);
+  }
+
+  // Clean up leading/trailing underscores
+  baseId = baseId.replace(/^_+|_+$/g, '');
+
+  if (!baseId || baseId.length < 2) {
+    baseId = `${type}_${existingIds.size}`;
+  }
+
+  // Deduplicate
+  let slotId = baseId;
+  let counter = 1;
+  while (existingIds.has(slotId)) {
+    slotId = `${baseId}_${counter}`;
+    counter++;
+  }
+
+  return slotId;
+}
+
+// --- MAIN DETECTION ---
+
 export function detectSlots(htmlBody: string): DetectSlotsResult {
   if (!htmlBody || typeof htmlBody !== 'string') return { htmlBody: '', slots: [] };
 
+  // Server-side safety check
   if (typeof DOMParser === 'undefined') {
     return { htmlBody: htmlBody || '', slots: [] };
   }
@@ -22,110 +248,86 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
     const parser = new DOMParser();
     doc = parser.parseFromString(htmlBody, 'text/html');
   } catch (error) {
+    console.error('Failed to parse template HTML');
     return { htmlBody, slots: [] };
   }
 
   const body = doc.body || doc.documentElement;
-
-  // 1. FIND MAIN CONTENT CONTAINER
-  function findMainContent(root: Element): Element {
-    const candidates = Array.from(root.querySelectorAll('div, article, section, main'));
-    let bestCandidate = root;
-    let maxScore = 0;
-
-    candidates.forEach(node => {
-      const className = (node.getAttribute('class') || '').toLowerCase();
-      const idName = (node.getAttribute('id') || '').toLowerCase();
-
-      // CRITICAL FILTER: Ignore junk containers to reduce slot count
-      const ignore = ['footer', 'header', 'nav', 'menu', 'popup', 'modal', 'cookie', 'widget', 'legal', 'copyright', 'bottom-bar', 'disclaimer'];
-
-      if (ignore.some(term => className.includes(term) || idName.includes(term))) return;
-
-      const paras = node.querySelectorAll('p').length;
-      const headers = node.querySelectorAll('h1, h2, h3, h4, h5, h6').length;
-
-      if (paras < 1) return;
-
-      const score = paras + (headers * 2);
-      if (score > maxScore) {
-        maxScore = score;
-        bestCandidate = node;
-      }
-    });
-
-    return bestCandidate;
-  }
-
   const contentRoot = findMainContent(body);
   const slots: TemplateSlot[] = [];
+  const usedIds = new Set<string>();
 
-  // 2. EXTRACT SLOTS
-  const allElements = contentRoot.querySelectorAll('h1, h2, h3, h4, h5, h6, p, ul, ol, img');
+  // Query ALL potentially editable elements
+  const selectors = [
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'p',
+    'ul', 'ol',
+    'img', 'picture',
+    'blockquote', 'figcaption',
+    'button',
+    'a',
+    'div', 'span',
+    'td', 'th',
+  ].join(', ');
+
+  const allElements = contentRoot.querySelectorAll(selectors);
 
   allElements.forEach((element) => {
-    // 2a. Strict Ancestor Check
-    if (element.closest('.footer, .nav, .menu, .widget, .copyright, .legal-links, .privacy-policy, header, footer, nav')) return;
-
-    const tagName = element.tagName.toLowerCase();
-    let type: SlotType | null = null;
-
-    if (tagName === 'h1' || tagName === 'h2') type = 'headline';
-    else if (['h3', 'h4', 'h5', 'h6'].includes(tagName)) type = 'subheadline';
-    else if (tagName === 'p') type = 'paragraph';
-    else if (tagName === 'ul' || tagName === 'ol') type = 'list';
-    else if (tagName === 'img') type = 'image';
-
-    if (!type) return;
+    // Skip if already processed or inside junk
     if (element.hasAttribute('data-slot')) return;
+    if (isInsideJunkContainer(element)) return;
+
+    // Skip structural table cells (spacing, layout-only)
+    if (element.tagName.toLowerCase() === 'td' || element.tagName.toLowerCase() === 'th') {
+      const text = element.textContent?.trim() || '';
+      // Skip cells that are just whitespace, &nbsp;, or very short
+      if (text === '' || text === '\u00a0' || text === '&nbsp;') return;
+    }
+
+    // Skip script, style, noscript content
+    if (element.closest('script, style, noscript, iframe')) return;
 
     const text = element.textContent?.trim() || '';
 
-    // 2b. Content Filter
-    // Keep 5 chars minimum (preserves "Price", "Pros")
-    // But filter specific junk phrases
-    if (type !== 'image') {
-      if (text.length < 5) return;
-      const junkPhrases = ['read more', 'click here', 'privacy policy', 'terms of service', 'contact us', 'all rights reserved', 'submit'];
-      if (junkPhrases.some(phrase => text.toLowerCase() === phrase)) return;
-    }
+    // Skip junk text
+    if (text && isJunkText(text)) return;
 
-    // Generate ID
-    let baseId = '';
+    // Classify
+    const type = classifyElement(element, text);
+    if (!type) return;
+
+    // For images, handle separately
     if (type === 'image') {
-      const alt = element.getAttribute('alt') || 'image';
-      baseId = alt.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 20);
-    } else {
-      baseId = text.toLowerCase().replace(/[^a-z0-9]+/g, '_').substring(0, 35);
+      const src = element.getAttribute('src') || '';
+      if (isJunkUrl(src)) return;
+      if (!src && element.tagName.toLowerCase() !== 'picture') return;
     }
 
-    // Ignore junk IDs explicitly
-    if (baseId.includes('privacy') || baseId.includes('terms') || baseId.includes('copyright')) return;
-
-    if (!baseId || baseId.length < 2) baseId = `${type}_${slots.length}`;
-
-    let slotId = baseId;
-    let counter = 1;
-    while (slots.some(s => s.id === slotId)) {
-      slotId = `${baseId}_${counter}`;
-      counter++;
+    // For CTAs, only keep if short action text
+    if (type === 'cta') {
+      if (text.length > 50 || text.length < 2) return;
     }
 
-    const label = slotId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    // Generate ID and label
+    const idText = type === 'image' ? (element.getAttribute('alt') || 'image') : text;
+    const slotId = generateSlotId(idText, type, usedIds);
+    usedIds.add(slotId);
 
-    // Capture Content & DETECT LIST STYLING
+    const label = generateReadableLabel(type === 'image' ? (element.getAttribute('alt') || `Image`) : text, type, slots.filter(s => s.type === type).length);
+
+    // Capture original content
     let originalContent = text;
     let listTemplate: string | undefined;
+    const tagName = element.tagName.toLowerCase();
 
     if (type === 'list') {
       const items = Array.from(element.querySelectorAll('li'));
-
       originalContent = items
         .map(li => li.textContent?.trim() || '')
         .filter(Boolean)
         .join('\n');
 
-      // Style Detection
+      // Detect list item styling pattern
       if (items.length > 0) {
         const firstLi = items[0];
         const firstLiHtml = firstLi.innerHTML;
@@ -134,60 +336,99 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
           listTemplate = firstLiHtml.replace(firstLiText.trim(), '{{CONTENT}}');
         }
       }
-
     } else if (type === 'image') {
       originalContent = element.getAttribute('src') || '';
     }
 
-    let effectiveType = type;
-    if (type === 'paragraph' && originalContent.length < 60) {
-      effectiveType = 'subheadline';
-    }
+    // Determine max length from original content
+    const maxLength = type === 'image' ? undefined :
+                      type === 'cta' ? 50 :
+                      type === 'headline' ? Math.max(originalContent.length * 2, 100) :
+                      type === 'subheadline' ? Math.max(originalContent.length * 2, 80) :
+                      type === 'list' ? Math.max(originalContent.length * 2, 500) :
+                      Math.max(originalContent.length * 2, 200);
 
-    const attributes = Array.from(element.attributes)
-      .filter(attr => attr.name !== 'data-slot' && attr.name !== 'src' && attr.name !== 'width' && attr.name !== 'height')
-      .map(attr => `${attr.name}="${attr.value}"`)
-      .join(' ');
-
+    // Get dimensions for images
     let width: number | undefined;
     let height: number | undefined;
-
-    // 2c. Enhanced Dimension Detection (Inline Styles)
     if (type === 'image') {
       const wAttr = element.getAttribute('width');
       const hAttr = element.getAttribute('height');
-
       if (wAttr) width = parseInt(wAttr, 10);
       if (hAttr) height = parseInt(hAttr, 10);
 
-      // Fallback: Check inline style string "width: 300px"
       const style = element.getAttribute('style') || '';
       const wMatch = style.match(/width:\s*(\d+)px/);
       const hMatch = style.match(/height:\s*(\d+)px/);
-
       if (!width && wMatch) width = parseInt(wMatch[1], 10);
       if (!height && hMatch) height = parseInt(hMatch[1], 10);
-
-      element.setAttribute('data-slot', slotId);
-    } else {
-      element.setAttribute('data-slot', slotId);
     }
+
+    // Preserve non-slot attributes
+    const attributes = Array.from(element.attributes)
+      .filter(attr => !['data-slot', 'src', 'width', 'height'].includes(attr.name))
+      .map(attr => `${attr.name}="${attr.value}"`)
+      .join(' ');
+
+    // Tag the element
+    element.setAttribute('data-slot', slotId);
 
     slots.push({
       id: slotId,
-      type: effectiveType,
+      type,
       label,
-      tagName: tagName,
+      tagName,
       originalContent,
+      maxLength,
       attributes,
       ...(width ? { width } : {}),
       ...(height ? { height } : {}),
-      ...(listTemplate ? { listTemplate } : {})
+      ...(listTemplate ? { listTemplate } : {}),
     });
   });
 
+  // FALLBACK: If zero text slots detected, try a broader sweep
+  if (slots.filter(s => s.type !== 'image').length === 0) {
+    console.warn('⚠️ Zero text slots detected. Running fallback detection on all text nodes...');
+
+    const allDivs = contentRoot.querySelectorAll('*');
+    allDivs.forEach((element) => {
+      if (element.hasAttribute('data-slot')) return;
+      if (element.closest('script, style, noscript, iframe, nav, footer, header')) return;
+
+      const text = element.textContent?.trim() || '';
+      if (text.length < 20) return;
+
+      // Only leaf elements (no children with substantial text)
+      const hasTextChildren = Array.from(element.children).some(
+        child => (child.textContent?.trim().length || 0) > 15
+      );
+      if (hasTextChildren) return;
+
+      const slotId = generateSlotId(text, 'paragraph', usedIds);
+      usedIds.add(slotId);
+
+      element.setAttribute('data-slot', slotId);
+
+      slots.push({
+        id: slotId,
+        type: 'paragraph',
+        label: generateReadableLabel(text, 'paragraph', slots.length),
+        tagName: element.tagName.toLowerCase(),
+        originalContent: text,
+        maxLength: Math.max(text.length * 2, 200),
+      });
+    });
+
+    if (slots.length > 0) {
+      console.log(`✅ Fallback detected ${slots.length} slots`);
+    } else {
+      console.warn('❌ No slots detected even with fallback. Template may have no editable content.');
+    }
+  }
+
   return {
     htmlBody: contentRoot.innerHTML,
-    slots
+    slots,
   };
 }
