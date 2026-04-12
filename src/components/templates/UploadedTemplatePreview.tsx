@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import type { UploadedTemplate } from "@/lib/templates/uploadedTypes";
 
 interface UploadedTemplatePreviewProps {
@@ -9,27 +9,33 @@ interface UploadedTemplatePreviewProps {
 
 export function UploadedTemplatePreview({ template }: UploadedTemplatePreviewProps) {
   const [error, setError] = useState<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [iframeHeight, setIframeHeight] = useState(800);
 
-  useEffect(() => {
-    // Inject CSS if available
-    if (template.css) {
-      const styleId = `uploaded-template-${template.id}-styles`;
-      if (!document.getElementById(styleId)) {
-        const style = document.createElement("style");
-        style.id = styleId;
-        style.textContent = template.css;
-        document.head.appendChild(style);
-      }
-      return () => {
-        const style = document.getElementById(styleId);
-        if (style) {
-          style.remove();
-        }
-      };
-    }
-  }, [template.css, template.id]);
+  // Build a complete HTML document for the iframe
+  const buildPreviewHtml = (): string => {
+    const headContent = template.headContent || '';
+    const css = template.css || '';
 
-  // Validate HTML before rendering
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  ${headContent}
+  ${css ? `<style>${css}</style>` : ''}
+  <style>
+    /* Prevent horizontal scroll in preview */
+    body { overflow-x: hidden; margin: 0; }
+  </style>
+</head>
+<body>
+  ${template.htmlBody}
+</body>
+</html>`;
+  };
+
+  // Validate HTML
   useEffect(() => {
     try {
       const parser = new DOMParser();
@@ -45,6 +51,29 @@ export function UploadedTemplatePreview({ template }: UploadedTemplatePreviewPro
     }
   }, [template.htmlBody]);
 
+  // Auto-resize iframe to content height
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    const handleLoad = () => {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc?.body) {
+          const height = Math.max(doc.body.scrollHeight, doc.documentElement?.scrollHeight || 0);
+          if (height > 100) {
+            setIframeHeight(height + 50);
+          }
+        }
+      } catch (e) {
+        // Cross-origin or access error — keep default height
+      }
+    };
+
+    iframe.addEventListener('load', handleLoad);
+    return () => iframe.removeEventListener('load', handleLoad);
+  }, [template.htmlBody]);
+
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-7xl mx-auto px-4 py-6 border-b border-gray-200 bg-gray-50">
@@ -55,11 +84,22 @@ export function UploadedTemplatePreview({ template }: UploadedTemplatePreviewPro
         <div className="flex gap-4 text-xs text-gray-500 mb-2">
           <span>Slots: {template.slots.length}</span>
           <span>Uploaded: {new Date(template.createdAt).toLocaleString()}</span>
+          {template.headContent && (
+            <span className="text-green-600">✓ Styles loaded</span>
+          )}
         </div>
         {template.slots.length === 0 && (
           <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
             <p className="text-sm text-yellow-800">
-              <strong>No editable slots detected.</strong> To make sections editable, add <code className="px-1 py-0.5 bg-yellow-100 rounded">data-slot=&quot;section-name&quot;</code> attributes to elements in the HTML.
+              <strong>No editable slots detected.</strong> To make sections editable, add <code className="px-1 py-0.5 bg-yellow-100 rounded">{'data-slot="section-name"'}</code> attributes to elements in the HTML.
+            </p>
+          </div>
+        )}
+        {!template.headContent && !template.css && (
+          <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="text-sm text-yellow-800">
+              <strong>No styles detected.</strong> The preview may look unstyled. Try re-uploading the template —
+              if it was saved from a website, the system will auto-fetch styles from the original page.
             </p>
           </div>
         )}
@@ -68,16 +108,17 @@ export function UploadedTemplatePreview({ template }: UploadedTemplatePreviewPro
             <p className="text-sm text-red-800">
               <strong>Preview Error:</strong> {error}
             </p>
-            <p className="text-xs text-red-600 mt-1">
-              The HTML may be incomplete or missing required elements. Try downloading the HTML to inspect it.
-            </p>
           </div>
         )}
       </div>
       {!error && (
-        <div
-          className="uploaded-template-content"
-          dangerouslySetInnerHTML={{ __html: template.htmlBody }}
+        <iframe
+          ref={iframeRef}
+          srcDoc={buildPreviewHtml()}
+          className="w-full border-0"
+          style={{ height: `${iframeHeight}px`, minHeight: '600px' }}
+          sandbox="allow-same-origin"
+          title={`Preview: ${template.name}`}
         />
       )}
       {error && (

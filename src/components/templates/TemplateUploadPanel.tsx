@@ -10,6 +10,63 @@ interface TemplateUploadPanelProps {
   onUploadSuccess?: () => void;
 }
 
+function extractSourceUrl(html: string): string | null {
+  // Try "saved from url" comment (Chrome/IE Save As)
+  const savedMatch = html.match(/<!--\s*saved from url=\(\d+\)(https?:\/\/[^\s]+)\s*-->/i);
+  if (savedMatch) return savedMatch[1];
+
+  // Try canonical link
+  const canonicalMatch = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["'](https?:\/\/[^"']+)["']/i);
+  if (canonicalMatch) return canonicalMatch[1];
+
+  // Try og:url
+  const ogMatch = html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["'](https?:\/\/[^"']+)["']/i);
+  if (ogMatch) return ogMatch[1];
+
+  return null;
+}
+
+async function fetchOriginalCss(sourceUrl: string): Promise<string> {
+  try {
+    const res = await fetch(`/api/fetch-html?url=${encodeURIComponent(sourceUrl)}`);
+    if (!res.ok) return '';
+    const { html } = await res.json();
+    if (!html) return '';
+
+    // Extract <link rel="stylesheet"> hrefs and <style> content from the fetched page
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const parts: string[] = [];
+
+    // Get all stylesheet links and convert to absolute URLs
+    const baseUrl = new URL(sourceUrl);
+    const base = `${baseUrl.protocol}//${baseUrl.host}`;
+
+    doc.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
+      let href = link.getAttribute('href');
+      if (href) {
+        // Make absolute
+        if (href.startsWith('//')) href = baseUrl.protocol + href;
+        else if (href.startsWith('/')) href = base + href;
+        else if (!href.startsWith('http')) href = sourceUrl.replace(/\/?$/, '/') + href;
+        parts.push(`<link rel="stylesheet" href="${href}">`);
+      }
+    });
+
+    // Get inline styles
+    doc.querySelectorAll('style').forEach((style) => {
+      if (style.textContent) {
+        parts.push(`<style>${style.textContent}</style>`);
+      }
+    });
+
+    return parts.join('\n');
+  } catch (err) {
+    console.error('Failed to fetch original CSS:', err);
+    return '';
+  }
+}
+
 export function TemplateUploadPanel({ onUploadSuccess }: TemplateUploadPanelProps) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,12 +81,17 @@ export function TemplateUploadPanel({ onUploadSuccess }: TemplateUploadPanelProp
     html: string,
     baseUrl: string | undefined,
     name: string,
-    description: string
+    description: string,
+    fetchedHeadContent?: string
   ) => {
     let text = html;
     setStatus("Resolving relative URLs...");
     text = resolveUrlsInHtml(text, baseUrl || undefined);
-    const headContent = extractHeadContent(text);
+    let headContent = extractHeadContent(text);
+    // If we fetched CSS from the original page, use it (it has correct absolute URLs)
+    if (fetchedHeadContent) {
+      headContent = fetchedHeadContent;
+    }
     setStatus("Detecting content slots...");
     const { htmlBody, slots: rawSlots } = detectSlots(text);
 
@@ -144,7 +206,27 @@ export function TemplateUploadPanel({ onUploadSuccess }: TemplateUploadPanelProp
     try {
       const text = await readFileAsText(file);
       const name = file.name.replace(/\.[^/.]+$/, "") || "Uploaded Template";
-      await processHtmlAndSave(text, sourceUrl.trim() || undefined, name, `Uploaded from file: ${file.name}`);
+
+      // Auto-detect source URL if user didn't provide one
+      let effectiveSourceUrl = sourceUrl.trim();
+      if (!effectiveSourceUrl) {
+        const detected = extractSourceUrl(text);
+        if (detected) {
+          effectiveSourceUrl = detected;
+          setSourceUrl(detected);
+          setStatus(`Detected source URL: ${detected}. Fetching styles...`);
+        }
+      }
+
+      // If we have a source URL and the file contains _files/ references (Chrome Save As),
+      // fetch the original page's CSS since local _files/ paths can't be resolved
+      let fetchedHeadContent = '';
+      if (effectiveSourceUrl && text.includes('_files/')) {
+        setStatus('Fetching styles from original page...');
+        fetchedHeadContent = await fetchOriginalCss(effectiveSourceUrl);
+      }
+
+      await processHtmlAndSave(text, effectiveSourceUrl || undefined, name, `Uploaded from file: ${file.name}`, fetchedHeadContent);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err: any) {
       console.error(err);
