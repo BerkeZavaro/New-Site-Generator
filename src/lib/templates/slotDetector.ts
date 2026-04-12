@@ -51,7 +51,6 @@ function isJunkUrl(url: string): boolean {
     lower.includes('google-analytics.com') ||
     lower.includes('facebook.net') ||
     lower.includes('file://') ||
-    lower.includes('_files/') ||
     lower.includes('localhost') ||
     lower.includes('127.0.0.1') ||
     lower.includes('data:image/gif') ||
@@ -128,9 +127,19 @@ function classifyElement(element: Element, text: string): SlotType | null {
   if (tag === 'button') return 'cta';
   if (tag === 'a') {
     const className = (element.getAttribute('class') || '').toLowerCase();
-    if (className.includes('btn') || className.includes('button') || className.includes('cta')) {
+    const linkText = text.toLowerCase();
+    // Class-based CTA detection
+    if (className.includes('btn') || className.includes('button') || className.includes('cta') || className.includes('submit')) {
       return 'cta';
     }
+    // Text-based CTA detection
+    const ctaPhrases = ['read the full review', 'see the full review', 'full review', 'visit site',
+                        'buy now', 'shop now', 'learn more', 'get started', 'try now', 'order now',
+                        'add to cart', 'sign up', 'get it now', 'claim', 'view deal'];
+    if (ctaPhrases.some(phrase => linkText.includes(phrase))) {
+      return 'cta';
+    }
+    return null; // Regular links should not become slots
   }
 
   // For <p>, <div>, <span>, <td> — classify by text length and context
@@ -138,6 +147,23 @@ function classifyElement(element: Element, text: string): SlotType | null {
   if (len < 5) return null; // Too short to be useful
 
   if (tag === 'p') {
+    // Filter out "Rating: X" labels in product tables
+    const pTextLower = text.toLowerCase().trim();
+    if (pTextLower.startsWith('rating:') || pTextLower.startsWith('rating :')) return null;
+
+    // Check if this paragraph contains only a single link (it's a CTA wrapper)
+    const links = element.querySelectorAll('a');
+    if (links.length === 1 && links[0].textContent?.trim().length === text.length) {
+      const linkClass = (links[0].getAttribute('class') || '').toLowerCase();
+      const linkText = text.toLowerCase();
+      const ctaPhrases = ['read the full review', 'see the full review', 'full review', 'visit site',
+                          'buy now', 'shop now', 'learn more', 'get started', 'try now', 'order now',
+                          'add to cart', 'sign up', 'get it now', 'claim', 'view deal'];
+      if (linkClass.includes('btn') || linkClass.includes('button') || linkClass.includes('submit') ||
+          ctaPhrases.some(phrase => linkText.includes(phrase))) {
+        return 'cta';
+      }
+    }
     if (len < 50) return 'subheadline';
     return 'paragraph';
   }
@@ -154,11 +180,20 @@ function classifyElement(element: Element, text: string): SlotType | null {
     // Skip container divs — we'll catch their children instead
     if (hasTextChildren) return null;
 
+    // Also skip divs that have many child elements (structural containers like product cards)
+    if ((tag === 'div') && childElements.length > 5) return null;
+
     // Skip table cells that are just spacing or very short structural text
     if ((tag === 'td' || tag === 'th') && len < 40) return null;
 
     // Skip tiny structural divs/spans (author info, labels, badges under 30 chars)
     if ((tag === 'div' || tag === 'span') && len < 40) {
+      // Skip "Rating: X" style labels in product tables
+      const textLower = text.toLowerCase();
+      if (textLower.startsWith('rating') || textLower === 'excellent' || textLower === 'good' ||
+          textLower === 'ok' || textLower === 'poor' || textLower === 'approved' ||
+          textLower === 'editor\'s choice') return null;
+
       // Exception: allow if it has headline-like styling hints
       const className = (element.getAttribute('class') || '').toLowerCase();
       const style = (element.getAttribute('style') || '').toLowerCase();
@@ -286,6 +321,21 @@ export function detectSlots(htmlBody: string): DetectSlotsResult {
 
     // Skip script, style, noscript content
     if (element.closest('script, style, noscript, iframe')) return;
+
+    // Skip elements inside a <ul> or <ol> that will be (or already is) captured as a list slot
+    // This prevents individual <li>, <span>, <b>, <strong> inside list items from becoming separate slots
+    const parentList = element.closest('ul, ol');
+    if (parentList && element !== parentList) return;
+
+    // Skip <a> tags if their parent <p> will be detected as a CTA
+    // (prevents duplicate: both <p> and inner <a> becoming separate CTA slots)
+    if (element.tagName.toLowerCase() === 'a') {
+      const parentP = element.closest('p');
+      if (parentP && parentP.querySelectorAll('a').length === 1 &&
+          parentP.textContent?.trim() === element.textContent?.trim()) {
+        return; // The parent <p> will handle this as a CTA
+      }
+    }
 
     const text = element.textContent?.trim() || '';
 
