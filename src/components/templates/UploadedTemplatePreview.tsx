@@ -26,7 +26,7 @@ export function UploadedTemplatePreview({ template }: UploadedTemplatePreviewPro
   ${css ? `<style>${css}</style>` : ''}
   <style>
     /* Prevent horizontal scroll in preview */
-    body { overflow-x: hidden; margin: 0; }
+    body { overflow-x: hidden; margin: 0; background-color: #ffffff !important; }
   </style>
 </head>
 <body>

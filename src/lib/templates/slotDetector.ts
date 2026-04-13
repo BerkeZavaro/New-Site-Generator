@@ -183,6 +183,22 @@ function classifyElement(element: Element, text: string): SlotType | null {
     // Also skip divs that have many child elements (structural containers like product cards)
     if ((tag === 'div') && childElements.length > 5) return null;
 
+    // Skip container elements where most text comes from children, not from the element itself.
+    // This catches structural containers like product cards, feature comparison boxes, etc.
+    // that aggregate text from many small children into one big text block.
+    if (tag === 'div' || tag === 'td' || tag === 'th') {
+      // Get direct text content (not from children)
+      let directTextLength = 0;
+      element.childNodes.forEach((node: any) => {
+        if (node.nodeType === 3) { // Text node
+          directTextLength += (node.textContent?.trim().length || 0);
+        }
+      });
+      const totalTextLength = text.length;
+      // If less than 20% of text is direct (rest comes from children), it's a container
+      if (totalTextLength > 60 && directTextLength < totalTextLength * 0.2) return null;
+    }
+
     // Skip table cells that are just spacing or very short structural text
     if ((tag === 'td' || tag === 'th') && len < 40) return null;
 
