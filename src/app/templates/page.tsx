@@ -36,6 +36,38 @@ export default function TemplatesPage() {
     }
   };
 
+  const handleDownloadReadyToEdit = async (template: UploadedTemplate) => {
+    try {
+      const res = await fetch('/api/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template,
+          slug: template.name.replace(/[^a-z0-9-_]/gi, '-').toLowerCase().substring(0, 50),
+          exportFormat: 'ready-to-edit',
+        }),
+      });
+
+      if (!res.ok) {
+        alert('Failed to generate download. Please try again.');
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (template.name.replace(/[^a-z0-9-_]/gi, '-').toLowerCase() || 'template') + '-ready-to-edit.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download error:', err);
+      alert('Failed to download. Please try again.');
+    }
+  };
+
   return (
     <main className="min-h-screen p-8 sm:p-20 bg-gray-50">
       <div className="max-w-6xl mx-auto">
@@ -166,6 +198,13 @@ ${htmlContent}
                             className="text-green-600 hover:text-green-800 font-medium text-sm"
                           >
                             Download
+                          </button>
+                          <button
+                            onClick={() => handleDownloadReadyToEdit(template)}
+                            className="text-sm text-emerald-600 hover:text-emerald-800 font-medium"
+                            title="Download as ready-to-edit HTML package with markdown content file"
+                          >
+                            📦 Ready-to-Edit
                           </button>
                           <button 
                             onClick={() => handleDelete(template.id)}

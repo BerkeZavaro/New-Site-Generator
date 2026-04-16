@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { CreatineReportProps } from '@/components/templates/CreatineReportTemplate';
 import { buildCreatineReportFiles } from '@/lib/export/buildCreatineReportFiles';
 import { buildCreatineReportReactFiles } from '@/lib/export/buildCreatineReportReactFiles';
+import { buildReadyToEditExport } from '@/lib/export/buildReadyToEditExport';
 import { buildUploadedTemplateFiles } from '@/lib/export/buildUploadedTemplateFiles';
 import { buildWordPressTemplate, buildWordPressUploadedTemplate } from '@/lib/export/buildWordPressExport';
 import { buildZipFromFiles } from '@/lib/export/zip';
@@ -30,15 +31,21 @@ export async function POST(request: NextRequest) {
     const safeSlug = exportSlug.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 50) || 'funnel';
     
     // Handle uploaded templates
-    if (template && slotData) {
-      if (exportFormat === "react-json") {
-        // React export for uploaded templates not yet implemented
-        return new Response('React export for uploaded templates is not yet supported', { status: 400 });
-      } else if (exportFormat === "wordpress") {
-        files = buildWordPressUploadedTemplate(template, slotData, safeSlug);
+    if (template) {
+      if (exportFormat === "ready-to-edit") {
+        files = buildReadyToEditExport(template);
+      } else if (slotData) {
+        if (exportFormat === "react-json") {
+          // React export for uploaded templates not yet implemented
+          return new Response('React export for uploaded templates is not yet supported', { status: 400 });
+        } else if (exportFormat === "wordpress") {
+          files = buildWordPressUploadedTemplate(template, slotData, safeSlug);
+        } else {
+          // Default to static-html
+          files = buildUploadedTemplateFiles(template, slotData);
+        }
       } else {
-        // Default to static-html
-        files = buildUploadedTemplateFiles(template, slotData);
+        return new Response('slotData required for this export format', { status: 400 });
       }
     } 
     // Handle CreatineReport template
