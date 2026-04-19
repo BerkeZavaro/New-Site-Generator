@@ -5,9 +5,15 @@ import { addUploadedTemplate } from "@/lib/templates/uploadedStorage";
 import type { UploadedTemplate } from "@/lib/templates/uploadedTypes";
 import { detectSlots } from "@/lib/templates/slotDetector";
 import { resolveUrlsInHtml, extractHeadContent } from "@/lib/templates/urlResolver";
+import {
+  formatStorageFullBannerMessage,
+  isStorageQuotaExceededError,
+} from "@/lib/storage/quotaGuard";
 
 interface TemplateUploadPanelProps {
   onUploadSuccess?: () => void;
+  /** Page-level banner for localStorage quota / write failures */
+  onStorageFailure?: (message: string) => void;
 }
 
 function extractSourceUrl(html: string): string | null {
@@ -67,7 +73,7 @@ async function fetchOriginalCss(sourceUrl: string): Promise<string> {
   }
 }
 
-export function TemplateUploadPanel({ onUploadSuccess }: TemplateUploadPanelProps) {
+export function TemplateUploadPanel({ onUploadSuccess, onStorageFailure }: TemplateUploadPanelProps) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -150,7 +156,23 @@ export function TemplateUploadPanel({ onUploadSuccess }: TemplateUploadPanelProp
       createdAt: now,
     };
 
-    addUploadedTemplate(uploaded);
+    try {
+      addUploadedTemplate(uploaded);
+    } catch (err) {
+      console.error("[template-upload] FULL ERROR:", err);
+      if (isStorageQuotaExceededError(err)) {
+        const msg = formatStorageFullBannerMessage(err.usageBytes, err.attemptedBytes);
+        onStorageFailure?.(msg);
+        setError(msg);
+      } else {
+        const detail = err instanceof Error ? err.message : String(err);
+        const msg = `Could not save template: ${detail}`;
+        onStorageFailure?.(msg);
+        setError(msg);
+      }
+      setStatus(null);
+      return;
+    }
     setStatus(`Success! Template "${name}" added with ${templateSlots.length} editable slots.`);
     if (onUploadSuccess) onUploadSuccess();
     setTimeout(() => setStatus(null), 5000);

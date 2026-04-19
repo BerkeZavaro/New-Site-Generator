@@ -158,8 +158,6 @@ export function ImageStudio({ template, initialImages, onImagesChange }: ImageSt
                   slotLabel={slot.label}
                   value={currentUrl}
                   onChange={(val) => void handleUrlChange(slot.id, val)}
-                  productName=""
-                  mainKeyword=""
                   dimensions={dimensions}
                 />
               </div>

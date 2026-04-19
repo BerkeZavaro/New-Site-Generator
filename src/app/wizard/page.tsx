@@ -10,6 +10,10 @@ import type { UploadedTemplate } from '@/lib/templates/uploadedTypes';
 import type { TemplateConfig } from '@/lib/templates/types';
 import { getTemplateFields } from '@/lib/generator/templateFields';
 import { saveFunnel, getFunnelById } from '@/lib/savedFunnelStorage';
+import {
+  formatStorageFullBannerMessage,
+  isStorageQuotaExceededError,
+} from '@/lib/storage/quotaGuard';
 
 // --- HELPER COMPONENTS ---
 
@@ -119,11 +123,16 @@ function WizardPageContent() {
     if (id) {
       const saved = getFunnelById(id);
       if (saved?.data) {
+        setErrorMessage(null);
         setProjectId(saved.id);
         setData({ ...initialData, ...saved.data });
         if (saved.data.slotData && Object.keys(saved.data.slotData).length > 0) {
           setCurrentStep(4);
         }
+      } else {
+        setErrorMessage(
+          `Could not load funnel with id "${id}". It may have been deleted. Open a saved project from the dashboard or Saved Funnels list.`
+        );
       }
     }
   }, [searchParams]);
@@ -145,13 +154,29 @@ function WizardPageContent() {
       return;
     }
     setErrorMessage(null);
-    const newId = saveFunnel(data, projectId);
-    setProjectId(newId);
-    router.replace(`/wizard?id=${newId}`, { scroll: false });
+    try {
+      const newId = saveFunnel(data, projectId);
+      setProjectId(newId);
+      router.replace(`/wizard?id=${newId}`, { scroll: false });
+    } catch (e) {
+      console.error('[save-funnel] FULL ERROR:', e);
+      if (isStorageQuotaExceededError(e)) {
+        setErrorMessage(formatStorageFullBannerMessage(e.usageBytes, e.attemptedBytes));
+        return;
+      }
+      const detail = e instanceof Error ? e.message : String(e);
+      setErrorMessage(`Failed to save project: ${detail}`);
+    }
   };
 
   const handleGenerateCoreNarrative = async () => {
-    if (!data.productName || !data.mainKeyword) return;
+    if (!data.productName || !data.mainKeyword) {
+      setErrorMessage(
+        'Cannot generate narrative: fill in Product Name and Main Keyword in Step 2, then try again.'
+      );
+      return;
+    }
+    setErrorMessage(null);
     setIsGenerating(true);
     try {
       const res = await fetch('/api/generate-core-narrative', {
@@ -165,23 +190,38 @@ function WizardPageContent() {
           tone: data.tone,
         }),
       });
+      console.log('[generate-core-narrative] HTTP status:', res.status);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || `Server error (${res.status})`);
       }
       const result = await res.json();
+      console.log('[generate-core-narrative] response body:', result);
       if (result.coreNarrative) updateField('coreNarrative', result.coreNarrative);
     } catch (e) {
-      console.error(e);
-      setErrorMessage('Failed to generate narrative.');
+      console.error('[generate-core-narrative] FULL ERROR:', e);
+      const detail = e instanceof Error ? e.message : String(e);
+      setErrorMessage(`Failed to generate narrative: ${detail}`);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleMapNarrativeToSlots = async () => {
+  const handleMapNarrativeToSlots = async (): Promise<boolean> => {
     const selected = getSelectedTemplate();
-    if (!selected || !data.coreNarrative) return;
+    if (!selected) {
+      setErrorMessage(
+        'No template is selected. Go to Step 1, choose a template from the dropdown, then try mapping again.'
+      );
+      return false;
+    }
+    if (!data.coreNarrative) {
+      setErrorMessage(
+        'Core narrative is empty. Generate a narrative with AI or paste text into the narrative box, then try mapping again.'
+      );
+      return false;
+    }
+    setErrorMessage(null);
     setIsMappingToSlots(true);
     try {
       const res = await fetch('/api/map-narrative-to-slots', {
@@ -198,25 +238,42 @@ function WizardPageContent() {
           templateSlots: selected.slots,
         }),
       });
+      console.log('[map-narrative-to-slots] HTTP status:', res.status);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || `Server error (${res.status})`);
       }
       const result = await res.json();
+      console.log('[map-narrative-to-slots] response body:', result);
       if (result.slots) {
         setData(prev => ({ ...prev, slotData: { ...(prev.slotData || {}), ...result.slots } }));
       }
+      return true;
     } catch (e) {
-      console.error(e);
-      setErrorMessage('Failed to map slots.');
+      console.error('[map-narrative-to-slots] FULL ERROR:', e);
+      const detail = e instanceof Error ? e.message : String(e);
+      setErrorMessage(`Failed to map narrative to slots: ${detail}`);
+      return false;
     } finally {
       setIsMappingToSlots(false);
     }
   };
 
   const handleRegenerateSlot = async (slotId: string, slotType: string) => {
-    if (!data.coreNarrative) return;
+    if (!data.coreNarrative) {
+      setErrorMessage(
+        'Core narrative is required to regenerate a slot. Go to Step 3 (Narrative), generate or paste your master narrative, then try Regenerate again.'
+      );
+      return;
+    }
     const selected = getSelectedTemplate();
+    if (!selected) {
+      setErrorMessage(
+        'No template is selected. Go to Step 1, choose a template, then return to this step and try Regenerate again.'
+      );
+      return;
+    }
+    setErrorMessage(null);
     const maxLength = getSlotMaxLength(slotId, selected);
     // Align with prompts.ts threshold (85 chars)
     const effectiveType = maxLength && maxLength < 85 ? 'headline' : slotType;
@@ -235,18 +292,24 @@ function WizardPageContent() {
           maxLength,
         }),
       });
+      console.log('[regenerate-slot] status:', res.status);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || `Server error (${res.status})`);
       }
       const result = await res.json();
+      console.log('[regenerate-slot] response:', result);
       if (result.content) {
         setData(prev => ({
           ...prev,
           slotData: { ...(prev.slotData || {}), [slotId]: result.content }
         }));
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error('[regenerate-slot] FULL ERROR:', e);
+      const detail = e instanceof Error ? e.message : String(e);
+      setErrorMessage(`Failed to regenerate slot: ${detail}`);
+    }
   };
 
   const selected = getSelectedTemplate();
@@ -274,15 +337,23 @@ function WizardPageContent() {
           </div>
         </div>
       </header>
-      {errorMessage && (
-        <div className="max-w-7xl mx-auto px-6 mb-4">
-          <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded text-sm">
-            {errorMessage}
-          </div>
-        </div>
-      )}
 
       <div className="max-w-7xl mx-auto px-6">
+        {errorMessage ? (
+          <div
+            role="alert"
+            className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-md mb-4 flex items-start justify-between gap-3"
+          >
+            <span className="flex-1 min-w-0 whitespace-pre-wrap break-words">{errorMessage}</span>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="flex-shrink-0 text-sm font-medium text-red-800 hover:text-red-950 underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
         {/* STEP 1 */}
         {currentStep === 1 && (
           <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200 max-w-2xl mx-auto">
@@ -442,11 +513,16 @@ function WizardPageContent() {
             <div className="flex gap-4 mt-6">
               <button onClick={() => setCurrentStep(2)} className="px-4 py-2 border rounded">Back</button>
               <button
+                type="button"
                 onClick={async () => {
-                  if (data.coreNarrative) {
-                    await handleMapNarrativeToSlots();
-                    setCurrentStep(4);
+                  if (!data.coreNarrative) {
+                    setErrorMessage(
+                      'Core narrative is empty. Go to Step 3 (Narrative), generate or paste your master narrative, then click Next again.'
+                    );
+                    return;
                   }
+                  const ok = await handleMapNarrativeToSlots();
+                  if (ok) setCurrentStep(4);
                 }}
                 disabled={!data.coreNarrative}
                 className="flex-1 bg-blue-600 text-white py-2 rounded disabled:bg-gray-300"
@@ -487,15 +563,13 @@ function WizardPageContent() {
                                 </p>
                               )}
                             </div>
-                            {data.coreNarrative && (
-                              <button
-                                type="button"
-                                onClick={() => handleRegenerateSlot(slot.id, slot.type)}
-                                className="text-xs text-blue-600 hover:underline"
-                              >
-                                Regenerate
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => void handleRegenerateSlot(slot.id, slot.type)}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              Regenerate
+                            </button>
                           </div>
                           {slot.type === 'list' ? (
                             <textarea

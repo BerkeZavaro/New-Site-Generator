@@ -1,11 +1,17 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from 'next/link';
 import { TEMPLATES } from '@/lib/templates/registry';
 import { loadUploadedTemplates, deleteUploadedTemplate } from '@/lib/templates/uploadedStorage';
 import type { UploadedTemplate } from '@/lib/templates/uploadedTypes';
 import { TemplateUploadPanel } from '@/components/templates/TemplateUploadPanel';
+import {
+  formatStorageFullBannerMessage,
+  getStorageUsageBytes,
+  isStorageQuotaExceededError,
+  STORAGE_BUDGET_BYTES,
+} from '@/lib/storage/quotaGuard';
 
 function escapeHtml(text: string): string {
   const div = document.createElement('div');
@@ -15,24 +21,47 @@ function escapeHtml(text: string): string {
 
 export default function TemplatesPage() {
   const [uploaded, setUploaded] = useState<UploadedTemplate[]>([]);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [usageBytes, setUsageBytes] = useState(0);
+
+  const refreshUsage = useCallback(() => {
+    setUsageBytes(getStorageUsageBytes());
+  }, []);
 
   useEffect(() => {
     setUploaded(loadUploadedTemplates());
-  }, []);
+    refreshUsage();
+  }, [refreshUsage]);
+
+  useEffect(() => {
+    refreshUsage();
+  }, [uploaded, refreshUsage]);
 
   // Re-load uploaded templates when storage changes
   useEffect(() => {
     const handleTemplateUploaded = () => {
       setUploaded(loadUploadedTemplates());
+      refreshUsage();
     };
     window.addEventListener('template-uploaded', handleTemplateUploaded);
     return () => window.removeEventListener('template-uploaded', handleTemplateUploaded);
-  }, []);
+  }, [refreshUsage]);
 
   const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this template?")) {
+    if (!confirm("Are you sure you want to delete this template?")) return;
+    try {
       const updated = deleteUploadedTemplate(id);
-      setUploaded(updated); // Update the local state to remove the row instantly
+      setUploaded(updated);
+      refreshUsage();
+      setPageError(null);
+    } catch (e) {
+      console.error('[templates-page] delete template FULL ERROR:', e);
+      if (isStorageQuotaExceededError(e)) {
+        setPageError(formatStorageFullBannerMessage(e.usageBytes, e.attemptedBytes));
+      } else {
+        const detail = e instanceof Error ? e.message : String(e);
+        setPageError(`Could not delete template: ${detail}`);
+      }
     }
   };
 
@@ -68,9 +97,30 @@ export default function TemplatesPage() {
     }
   };
 
+  const usagePct = (usageBytes / STORAGE_BUDGET_BYTES) * 100;
+  const usagePctDisplay = Math.round(usagePct);
+  const usageMb = (usageBytes / (1024 * 1024)).toFixed(1);
+  const usageColorClass =
+    usagePct > 90 ? 'text-red-600' : usagePct > 70 ? 'text-amber-600' : 'text-gray-500';
+
   return (
     <main className="min-h-screen p-8 sm:p-20 bg-gray-50">
       <div className="max-w-6xl mx-auto">
+        {pageError ? (
+          <div
+            role="alert"
+            className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-md mb-4 flex items-start justify-between gap-3"
+          >
+            <span className="flex-1 min-w-0 whitespace-pre-wrap break-words">{pageError}</span>
+            <button
+              type="button"
+              onClick={() => setPageError(null)}
+              className="flex-shrink-0 text-sm font-medium text-red-800 hover:text-red-950 underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
         <div className="mb-8">
           <Link href="/" className="text-sm text-blue-600 hover:text-blue-800 mb-4 inline-block">
             ← Back to home
@@ -131,8 +181,11 @@ export default function TemplatesPage() {
 
         {/* Uploaded Templates */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Uploaded Templates</h2>
-          
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Uploaded Templates</h2>
+          <p className={`text-xs mb-4 ${usageColorClass}`}>
+            Storage: {usageMb} MB / 5.0 MB ({usagePctDisplay}%)
+          </p>
+
           {uploaded.length === 0 ? (
             <p className="text-gray-600 text-sm">No uploaded templates yet.</p>
           ) : (
@@ -224,8 +277,13 @@ ${htmlContent}
 
         {/* Upload Template Section */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <TemplateUploadPanel 
-            onUploadSuccess={() => setUploaded(loadUploadedTemplates())}
+          <TemplateUploadPanel
+            onUploadSuccess={() => {
+              setUploaded(loadUploadedTemplates());
+              refreshUsage();
+              setPageError(null);
+            }}
+            onStorageFailure={(msg) => setPageError(msg)}
           />
         </div>
       </div>

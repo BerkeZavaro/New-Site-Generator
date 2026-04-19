@@ -1,4 +1,9 @@
 import type { UploadedTemplate } from "./uploadedTypes";
+import {
+  safeSetItem,
+  StorageQuotaExceededError,
+  getValueUtf16Bytes,
+} from "@/lib/storage/quotaGuard";
 
 const STORAGE_KEY = "site-generator:uploaded-templates";
 
@@ -21,10 +26,19 @@ export function loadUploadedTemplates(): UploadedTemplate[] {
 export function saveUploadedTemplates(list: UploadedTemplate[]): void {
   if (typeof window === "undefined") return;
 
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  } catch {
-    // ignore
+  const payload = JSON.stringify(list);
+  const res = safeSetItem(STORAGE_KEY, payload);
+  if (!res.ok) {
+    if (res.reason === "quota") {
+      console.error("[uploadedStorage] Quota exceeded — write aborted", {
+        usageBytes: res.usageBytes,
+        deltaBytes: res.attemptedBytes,
+        payloadUtf16Bytes: getValueUtf16Bytes(payload),
+      });
+      throw new StorageQuotaExceededError(res.usageBytes, getValueUtf16Bytes(payload));
+    }
+    console.error("[uploadedStorage] localStorage write failed", res.error);
+    throw res.error;
   }
 }
 

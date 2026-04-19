@@ -1,5 +1,11 @@
 'use client';
 
+import {
+  safeSetItem,
+  StorageQuotaExceededError,
+  getValueUtf16Bytes,
+} from '@/lib/storage/quotaGuard';
+
 export interface SavedFunnel {
   id: string;
   name: string;
@@ -39,6 +45,24 @@ function getName(data: SavedFunnel['data']): string {
     return `${data.productName} (${data.mainKeyword})`;
   }
   return data.productName || 'Untitled Project';
+}
+
+function persistFunnels(funnels: SavedFunnel[]): void {
+  if (typeof window === 'undefined') return;
+  const payload = JSON.stringify(funnels);
+  const res = safeSetItem(STORAGE_KEY, payload);
+  if (!res.ok) {
+    if (res.reason === 'quota') {
+      console.error('[savedFunnelStorage] Quota exceeded — write aborted', {
+        usageBytes: res.usageBytes,
+        deltaBytes: res.attemptedBytes,
+        payloadUtf16Bytes: getValueUtf16Bytes(payload),
+      });
+      throw new StorageQuotaExceededError(res.usageBytes, getValueUtf16Bytes(payload));
+    }
+    console.error('[savedFunnelStorage] localStorage write failed', res.error);
+    throw res.error;
+  }
 }
 
 export function getSavedFunnels(): SavedFunnel[] {
@@ -98,34 +122,13 @@ export function saveFunnel(funnelData: unknown, funnelId?: string): string {
     updatedFunnels = [newFunnel, ...funnels];
   }
 
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedFunnels));
-    return newId;
-  } catch (error: unknown) {
-    const err = error as { name?: string; message?: string };
-    console.error('Failed to save funnel:', error);
-    if (
-      err.name === 'QuotaExceededError' ||
-      err.message?.toLowerCase().includes('quota') ||
-      err.message?.toLowerCase().includes('exceeded')
-    ) {
-      alert(
-        "⚠️ STORAGE FULL! The project is too large to save.\n\nTry deleting old projects from 'Saved Work' or ensure your images are compressed."
-      );
-    } else {
-      alert('Error saving project: ' + (err?.message ?? 'Unknown error'));
-    }
-    return newId;
-  }
+  persistFunnels(updatedFunnels);
+  return newId;
 }
 
 export function deleteFunnel(id: string): void {
   const funnels = getSavedFunnels().filter(f => f.id !== id);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(funnels));
-  } catch (e) {
-    console.error('Error deleting funnel', e);
-  }
+  persistFunnels(funnels);
 }
 
 export function duplicateFunnel(id: string): SavedFunnel | null {
@@ -143,11 +146,6 @@ export function duplicateFunnel(id: string): SavedFunnel | null {
   };
 
   const updated = [duplicate, ...funnels];
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  } catch (error) {
-    console.error('Failed to duplicate funnel:', error);
-    return null;
-  }
+  persistFunnels(updated);
   return duplicate;
 }

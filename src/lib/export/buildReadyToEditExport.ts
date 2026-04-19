@@ -118,8 +118,15 @@ ${template.htmlBody}
           .filter(function(l) { return l.length > 0; })
           .map(function(l) { return l.replace(/^[-*•]\\s+/, '').replace(/^\\d+[\\.)]\\s+/, ''); });
         el.innerHTML = items.map(function(i) { return '<li>' + i + '</li>'; }).join('');
-      } else {
+      } else if (tag === 'a') {
         el.textContent = content;
+      } else {
+        var kids = el.children;
+        if (kids.length === 1 && kids[0].tagName && kids[0].tagName.toLowerCase() === 'a') {
+          kids[0].textContent = content;
+        } else {
+          el.textContent = content;
+        }
       }
       count++;
     });

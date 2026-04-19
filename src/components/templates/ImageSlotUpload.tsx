@@ -10,8 +10,6 @@ interface ImageSlotUploadProps {
   onChange: (value: string) => void;
   placeholderImage?: string; // Optional: current placeholder from template
   dimensions?: { width?: number; height?: number }; // Optional: suggested dimensions
-  productName?: string; // Optional: product name for AI context
-  mainKeyword?: string; // Optional: main keyword for AI context
 }
 
 export function ImageSlotUpload({
@@ -21,15 +19,10 @@ export function ImageSlotUpload({
   onChange,
   placeholderImage,
   dimensions,
-  productName,
-  mainKeyword,
 }: ImageSlotUploadProps) {
-  const [uploadMode, setUploadMode] = useState<"url" | "file" | "ai">(value && !value.startsWith("data:") && !value.startsWith("blob:") ? "url" : "file");
+  const [uploadMode, setUploadMode] = useState<"url" | "file">("file");
   const [preview, setPreview] = useState<string | null>(value || null);
   const [isUploading, setIsUploading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiError, setAiError] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [fileSize, setFileSize] = useState<number | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -236,77 +229,6 @@ export function ImageSlotUpload({
     }
   };
 
-  const handleGenerateImage = async () => {
-    if (!aiPrompt.trim()) {
-      setAiError("Please enter a description for the image");
-      return;
-    }
-
-    setIsGenerating(true);
-    setAiError(null);
-
-    try {
-      // Get context from parent if available (product name, keyword, etc.)
-      // For now, we'll use the prompt directly
-      const response = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: aiPrompt,
-          slotLabel: slotLabel,
-          dimensions: dimensions,
-          productName: productName,
-          mainKeyword: mainKeyword,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        // If image generation isn't available, show helpful error
-        if (data.alternatives) {
-          setAiError(
-            `${data.error || 'Image generation failed'}\n\n` +
-            `Details: ${data.details || ''}\n\n` +
-            `Suggestion: ${data.suggestion || ''}\n\n` +
-            `Alternatives:\n${data.alternatives.map((alt: string) => `• ${alt}`).join('\n')}`
-          );
-        } else {
-          setAiError(data.error || data.details || 'Failed to generate image');
-        }
-        setIsGenerating(false);
-        return;
-      }
-
-      // If successful, set the generated image
-      if (data.success && (data.imageUrl || data.imageData)) {
-        const imageUrl = data.imageUrl || data.imageData;
-        setPreview(imageUrl);
-        onChange(imageUrl);
-        setAiError(null); // Clear any previous errors
-        
-        // Get image dimensions
-        const img = new Image();
-        img.onload = () => {
-          setImageDimensions({ width: img.width, height: img.height });
-        };
-        img.onerror = () => {
-          setImageDimensions(null);
-        };
-        img.src = imageUrl;
-        setFileSize(null); // AI-generated images don't have file size
-      } else {
-        setAiError(data.error || 'Image generation returned no image data');
-      }
-    } catch (error: any) {
-      setAiError(error.message || 'Failed to generate image. Please try again.');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   return (
     <div className="space-y-3">
       {/* Upload Mode Toggle */}
@@ -332,17 +254,6 @@ export function ImageSlotUpload({
           }`}
         >
           🔗 Use URL
-        </button>
-        <button
-          type="button"
-          onClick={() => setUploadMode("ai")}
-          className={`px-4 py-2 text-sm rounded-md font-medium transition-colors ${
-            uploadMode === "ai"
-              ? "bg-purple-600 text-white"
-              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-          }`}
-        >
-          ✨ Generate with AI
         </button>
       </div>
 
@@ -475,67 +386,6 @@ export function ImageSlotUpload({
               )}
             </p>
           )}
-        </div>
-      )}
-
-      {/* AI Generation Mode */}
-      {uploadMode === "ai" && (
-        <div className="space-y-3">
-          <div className="bg-purple-50 border border-purple-200 rounded-md p-3">
-            <p className="text-sm text-purple-800 mb-2">
-              <strong>✨ AI Image Generation</strong>
-            </p>
-            <p className="text-xs text-purple-700 mb-2">
-              Describe the image you want to generate. The AI will create an image based on your product and keyword context.
-            </p>
-            {dimensions && (
-              <p className="text-xs text-purple-700 font-medium">
-                📐 Target size: <span className="font-semibold">{dimensions.width || "?"} × {dimensions.height || "?"}px</span>
-              </p>
-            )}
-          </div>
-          
-          <textarea
-            value={aiPrompt}
-            onChange={(e) => {
-              setAiPrompt(e.target.value);
-              setAiError(null);
-            }}
-            placeholder="e.g., A professional photo of creatine supplement bottle on a clean white background with gym equipment in the background"
-            className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
-            rows={4}
-            disabled={isGenerating}
-          />
-          
-          {aiError && (
-            <div className="bg-red-50 border border-red-200 rounded-md p-3">
-              <p className="text-sm text-red-800 whitespace-pre-line">{aiError}</p>
-            </div>
-          )}
-          
-          <button
-            type="button"
-            onClick={handleGenerateImage}
-            disabled={isGenerating || !aiPrompt.trim()}
-            className={`w-full px-4 py-3 rounded-md font-medium transition-colors ${
-              isGenerating || !aiPrompt.trim()
-                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                : "bg-purple-600 text-white hover:bg-purple-700"
-            }`}
-          >
-            {isGenerating ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="animate-spin">⏳</span>
-                Generating image...
-              </span>
-            ) : (
-              "✨ Generate Image"
-            )}
-          </button>
-          
-          <p className="text-xs text-gray-500">
-            Note: AI image generation may require additional API setup (Vertex AI Imagen, DALL-E, or Stability AI)
-          </p>
         </div>
       )}
 
