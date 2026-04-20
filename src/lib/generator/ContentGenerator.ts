@@ -186,7 +186,7 @@ export class ContentGenerator {
   // Both set to flash for free tier. Change CREATIVE_MODEL to 'gemini-2.5-pro' if on a paid plan.
   // Model constants for Hybrid Model Strategy
   private static readonly CREATIVE_MODEL = 'gemini-2.5-flash';
-  private static readonly FAST_MODEL = 'gemini-2.5-flash';
+  private static readonly FAST_MODEL = 'gemini-1.5-flash';
   
   private aiProvider: AIModelProvider;
   private modelConfig: AIModelConfig;

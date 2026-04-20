@@ -1,4 +1,5 @@
 import type { UploadedTemplate } from '@/lib/templates/uploadedTypes';
+import { FONTS as FONT_REGISTRY, DEFAULT_FONT_ID } from '@/lib/fonts/registry';
 
 export type StaticFile = {
   path: string;
@@ -9,8 +10,11 @@ function escapeMarkdown(text: string): string {
   return text.replace(/^(#{1,6}\s)/gm, '\\$1').replace(/^```/gm, '\\`\\`\\`');
 }
 
-export function buildReadyToEditExport(template: UploadedTemplate): StaticFile[] {
+export function buildReadyToEditExport(template: UploadedTemplate, font?: string): StaticFile[] {
   const files: StaticFile[] = [];
+  const selectedFont =
+    FONT_REGISTRY.find((entry) => entry.id === font) ||
+    FONT_REGISTRY.find((entry) => entry.id === DEFAULT_FONT_ID)!;
   
   // Build content.md — each slot is a section with a heading
   const markdownSections: string[] = [];
@@ -56,7 +60,11 @@ export function buildReadyToEditExport(template: UploadedTemplate): StaticFile[]
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${template.name}</title>
+  ${selectedFont.googleFontsUrl ? `<link rel="stylesheet" href="${selectedFont.googleFontsUrl}">` : ''}
   ${headContent}
+  <style>
+    body { font-family: ${selectedFont.cssFamily}; }
+  </style>
   ${inlineCss ? `<style>${inlineCss}</style>` : ''}
   <style>
     [data-slot]:hover { outline: 2px dashed #3b82f6; outline-offset: 2px; }

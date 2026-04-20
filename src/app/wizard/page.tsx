@@ -14,6 +14,8 @@ import {
   formatStorageFullBannerMessage,
   isStorageQuotaExceededError,
 } from '@/lib/storage/quotaGuard';
+import { FONTS as FONT_REGISTRY, DEFAULT_FONT_ID } from '@/lib/fonts/registry';
+import { FONTS } from "@/lib/fonts/registry";
 
 // --- HELPER COMPONENTS ---
 
@@ -138,6 +140,25 @@ function WizardPageContent() {
   }, [searchParams]);
 
   const debouncedSlotData = useDebounce(data.slotData || {}, 300);
+  const selectedFont =
+    FONT_REGISTRY.find((font) => font.id === data.font) ||
+    FONT_REGISTRY.find((font) => font.id === DEFAULT_FONT_ID)!;
+
+  useEffect(() => {
+    const fontLinkId = 'marketily-font-link';
+    const existing = document.getElementById(fontLinkId);
+    if (existing?.parentNode) {
+      existing.parentNode.removeChild(existing);
+    }
+
+    if (!selectedFont.googleFontsUrl) return;
+
+    const link = document.createElement('link');
+    link.id = fontLinkId;
+    link.rel = 'stylesheet';
+    link.href = selectedFont.googleFontsUrl;
+    document.head.appendChild(link);
+  }, [selectedFont]);
 
   const getSelectedTemplate = (): TemplateConfig | null => {
     if (!data.templateId) return null;
@@ -401,32 +422,11 @@ function WizardPageContent() {
                   value={data.font}
                   onChange={e => updateField('font', e.target.value)}
                 >
-                  <optgroup label="Sans-Serif (Modern)">
-                    <option value="Arial">Arial</option>
-                    <option value="Helvetica">Helvetica</option>
-                    <option value="Verdana">Verdana</option>
-                    <option value="Trebuchet MS">Trebuchet MS</option>
-                    <option value="Tahoma">Tahoma</option>
-                    <option value="Geneva">Geneva</option>
-                    <option value="Open Sans">Open Sans (Google)</option>
-                    <option value="Roboto">Roboto (Google)</option>
-                    <option value="Lato">Lato (Google)</option>
-                    <option value="Montserrat">Montserrat (Google)</option>
-                    <option value="Poppins">Poppins (Google)</option>
-                  </optgroup>
-                  <optgroup label="Serif (Classic)">
-                    <option value="Times New Roman">Times New Roman</option>
-                    <option value="Georgia">Georgia</option>
-                    <option value="Garamond">Garamond</option>
-                    <option value="Palatino">Palatino</option>
-                    <option value="Merriweather">Merriweather (Google)</option>
-                    <option value="Playfair Display">Playfair Display (Google)</option>
-                  </optgroup>
-                  <optgroup label="Monospace (Code)">
-                    <option value="Courier New">Courier New</option>
-                    <option value="Monaco">Monaco</option>
-                    <option value="Lucida Console">Lucida Console</option>
-                  </optgroup>
+                  {FONTS.map((font) => (
+                    <option key={font.id} value={font.id}>
+                      {font.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -605,7 +605,10 @@ function WizardPageContent() {
                 <div className="p-4 bg-gray-50 border-b font-medium text-gray-700">
                   Preview & Code
                 </div>
-                <div className="flex-1 overflow-hidden relative">
+                <div
+                  className="flex-1 overflow-hidden relative"
+                  style={{ fontFamily: selectedFont.cssFamily }}
+                >
                   <UploadedTemplateRenderer template={selected} slotData={debouncedSlotData} />
                 </div>
               </div>

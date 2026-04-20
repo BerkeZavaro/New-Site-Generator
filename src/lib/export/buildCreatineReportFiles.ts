@@ -4,6 +4,7 @@ import { CREATINE_REPORT_CSS } from "@/lib/templates/creatineReportCss";
 export type StaticFile = {
   path: string;      // e.g. "index.html" or "styles.css"
   contents: string;  // file contents as string
+  encoding?: "base64"; // if present, contents is raw base64 (no data URL prefix)
 };
 
 function escapeHtml(text: string): string {

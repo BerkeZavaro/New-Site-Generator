@@ -1,5 +1,6 @@
 import type { UploadedTemplate } from "@/lib/templates/uploadedTypes";
 import type { StaticFile } from "./buildCreatineReportFiles";
+import { FONTS as FONT_REGISTRY, DEFAULT_FONT_ID } from "@/lib/fonts/registry";
 
 /** HTML void elements — used when stripping extension-injected subtrees. */
 const VOID_HTML_TAGS = new Set([
@@ -272,9 +273,11 @@ function escapeHtml(text: string): string {
 
 export function buildUploadedTemplateFiles(
   template: UploadedTemplate,
-  slotData: Record<string, string>
+  slotData: Record<string, string>,
+  font?: string
 ): StaticFile[] {
   let bodyHtml = template.htmlBody;
+  const extraFiles: StaticFile[] = [];
 
   // Replace slot content using regex (server-side compatible)
   // This approach preserves the original element structure, classes, IDs, and attributes
@@ -308,20 +311,17 @@ export function buildUploadedTemplateFiles(
         }
         return openTag + closeTag;
       } else if (slot.type === "image" && tagNameLower === "img") {
-        // For images, preserve the opening tag and only update src attribute
-        // Keep all other attributes (class, id, style, alt, etc.)
-        const updatedTag = openTag.replace(
-          /(src=["'])([^"']*)(["'])/i,
-          `$1${escapedContent}$3`
-        );
-        // Also update alt if content is provided
-        if (slotContent) {
-          return updatedTag.replace(
-            /(alt=["'])([^"']*)(["'])/i,
-            `$1${escapedContent}$3`
-          );
+        const updatedTag = openTag
+          .replace(/(src=["'])[^"']*(["'])/i, "$1$2")
+          .replace(/(alt=["'])[^"']*(["'])/i, '$1Add your image here$2');
+        if (/\salt=["'][^"']*["']/i.test(updatedTag)) {
+          return updatedTag + closeTag;
         }
-        return updatedTag;
+        const updatedTagWithAlt = updatedTag.replace(
+          /\s*\/?>$/,
+          ' alt="Add your image here"$&'
+        );
+        return updatedTagWithAlt + closeTag;
       } else if (slot.type === "cta" && tagNameLower === "a") {
         // For links/CTAs, preserve the opening tag and only update href attribute
         const updatedTag = openTag.replace(
@@ -375,9 +375,20 @@ ${bodyHtml}
 </html>`;
 
   const indexContents = sanitizeStaticHtmlBodyExport(html);
+  const selectedFont =
+    FONT_REGISTRY.find((entry) => entry.id === font) ||
+    FONT_REGISTRY.find((entry) => entry.id === DEFAULT_FONT_ID)!;
+  const fontComment = selectedFont.googleFontsUrl
+    ? `<!-- Marketily font: import this in your <head>: <link href="${selectedFont.googleFontsUrl}" rel="stylesheet"> -->\n`
+    : "";
+  const indexContentsWithFont =
+    `${fontComment}<div style="font-family: ${selectedFont.cssFamily};">\n` +
+    `${indexContents}\n` +
+    `</div>`;
 
   return [
-    { path: "index.html", contents: indexContents },
+    { path: "index.html", contents: indexContentsWithFont },
     { path: "styles.css", contents: css },
+    ...extraFiles,
   ];
 }

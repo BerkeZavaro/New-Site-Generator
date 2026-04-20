@@ -21,7 +21,6 @@ export default function Home() {
           <ul className="list-disc list-inside text-gray-600 space-y-2 ml-2">
             <li><strong>Template Manager:</strong> Analyzes your HTML to create the master blueprints.</li>
             <li><strong>Text Generator:</strong> Writes strict, formatted copy that fits your template slots.</li>
-            <li><strong>Image Studio:</strong> Generates images sized exactly to your template&apos;s dimensions.</li>
           </ul>
         </div>
 
@@ -48,33 +47,10 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/image-studio"
-            className="group block p-6 bg-purple-600 rounded-lg shadow-md hover:bg-purple-700 transition-all transform hover:-translate-y-1"
-          >
-            <h3 className="text-xl font-bold text-white mb-2">3. Image Studio</h3>
-            <p className="text-purple-100 text-sm">
-              Generate or upload images matching exact template dimensions.
-            </p>
-          </Link>
-
-          <Link
-            href="/assembler"
-            className="group block p-6 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md hover:border-green-300 transition-all transform hover:-translate-y-1"
-          >
-            <div className="text-green-600 mb-2">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">4. Final Assembler</h3>
-            <p className="text-gray-500 text-sm">
-              Merge Text + Images into the master template.
-            </p>
-          </Link>
-
-          <Link
             href="/saved"
             className="group block p-6 bg-orange-600 rounded-lg shadow-md hover:bg-orange-700 transition-all transform hover:-translate-y-1"
           >
-            <h3 className="text-xl font-bold text-white mb-2">5. Saved Work</h3>
+            <h3 className="text-xl font-bold text-white mb-2">3. Saved Work</h3>
             <p className="text-orange-100 text-sm">
               View your saved text drafts and projects.
             </p>
