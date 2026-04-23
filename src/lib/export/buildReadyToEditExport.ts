@@ -53,6 +53,10 @@ export function buildReadyToEditExport(template: UploadedTemplate, font?: string
   // Build index.html with injection script
   const headContent = template.headContent || '';
   const inlineCss = template.css || '';
+  const cleanedCss = inlineCss
+    .replace(/\[data-slot\][^{]*\{[^}]*\}/g, '')
+    .replace(/\[data-slot\][^,{]*,?/g, '');
+  const safeInlineCss = cleanedCss.trim();
   
   const htmlContent = `<!DOCTYPE html>
 <html lang="en">
@@ -65,9 +69,8 @@ export function buildReadyToEditExport(template: UploadedTemplate, font?: string
   <style>
     body { font-family: ${selectedFont.cssFamily}; }
   </style>
-  ${inlineCss ? `<style>${inlineCss}</style>` : ''}
+  ${safeInlineCss ? `<style>${safeInlineCss}</style>` : ''}
   <style>
-    [data-slot]:hover { outline: 2px dashed #3b82f6; outline-offset: 2px; }
     #__content_status__ {
       position: fixed; bottom: 12px; right: 12px;
       padding: 8px 14px; background: #1e293b; color: #fff;
